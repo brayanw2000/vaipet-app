@@ -33,6 +33,7 @@ const PASSWORD = 'VaiPet@2026';
 const LOC_A = { longitude: -46.6333, latitude: -23.5505 };
 const LOC_B = { longitude: -46.6353, latitude: -23.5525 };
 const LOC_C = { longitude: -46.6373, latitude: -23.5545 };
+const LOC_D = { longitude: -46.6413, latitude: -23.5565 };
 
 const log = (msg: string) =>
   console.log(`[${new Date().toISOString()}] [completion-operational-4.3] ${msg}`);
@@ -112,9 +113,16 @@ test.describe('Phase 4.3: Operational Completion Flow (Patch 2)', () => {
       .eq('id', id)
       .single();
     if (sErr) throw new Error(`route_select_failed: ${JSON.stringify(sErr)}`);
+    const raw = session.route_coordinates;
+    // FAIL CLOSED: formato inesperado de rota não pode passar silenciosamente.
+    if (!Array.isArray(raw)) throw new Error("route_coordinates_unexpected_format");
+    const routeCoordinates: [number, number][] = raw
+      .filter((c: any) => Array.isArray(c) && c.length >= 2)
+      .map((c: any) => [Number(c[0]), Number(c[1])]);
     return {
       trackingCount: rows ? rows.length : 0,
-      routeLen: Array.isArray(session.route_coordinates) ? session.route_coordinates.length : 0,
+      routeLen: routeCoordinates.length,
+      routeCoordinates,
     };
   }
 
@@ -335,28 +343,62 @@ test.describe('Phase 4.3: Operational Completion Flow (Patch 2)', () => {
     ).toHaveCount(0);
   });
 
-  test('05. GPS continua ativo durante returning (browser → Provider)', async () => {
+  test('05. GPS continua ativo durante returning — posição B provada (browser → Provider)', async () => {
     const before = await trackingStats(sessionId);
     const profBefore = await auditWalkerProfile();
     expect(profBefore.current_walk_id).toBe(sessionId);
+    expect(before.trackingCount).toBeGreaterThan(0);
 
-    // Move o GPS do BROWSER Walker para B (nunca chamamos update_walker_location).
+    // Aguarda o fechamento da janela de throttle certificada da Phase 4.2
+    // (10s provider + 5s append) DESDE o sample anterior, para que o sample
+    // em B caia em uma janela nova e seja gravado de verdade.
+    await walkerPage!.waitForTimeout(10500);
+
+    // Observer factual resetado: registra somente respostas REAIS do Provider.
+    rpcCalls['update_walker_location'] = [];
+
+    // Move o GPS do BROWSER Walker para B — o PetwalkerGpsProvider captura e
+    // chama update_walker_location (o teste NUNCA chama a RPC diretamente).
     await walkerCtx!.setGeolocation(LOC_B);
-    // Throttle certificado da Phase 4.2 (10s provider + 5s append): espera >= 10.5s,
-    // depois força um novo sample para garantir sync.
-    await walkerPage!.waitForTimeout(11000);
-    await walkerCtx!.setGeolocation(LOC_C);
-    await walkerPage!.waitForTimeout(3000);
 
+    // PROVA 1: resposta REAL do Provider — HTTP 200 + body true.
+    await expect
+      .poll(
+        () => {
+          const calls = rpcCalls['update_walker_location'] || [];
+          const last = calls[calls.length - 1];
+          return !!(last && last.status === 200 && last.body === true);
+        },
+        { timeout: 20000 }
+      )
+      .toBe(true);
+
+    // PROVA 2 (admin): o último ponto persistido da rota É B, com tolerância
+    // pequena — não aceitamos "qualquer ponto novo" (LOC_C não é usado).
+    await expect
+      .poll(
+        async () => {
+          const st = await trackingStats(sessionId);
+          const last = st.routeCoordinates[st.routeCoordinates.length - 1];
+          if (!last) return false;
+          return (
+            Math.abs(last[0] - LOC_B.longitude) < 0.0001 &&
+            Math.abs(last[1] - LOC_B.latitude) < 0.0001
+          );
+        },
+        { timeout: 20000 }
+      )
+      .toBe(true);
+
+    // PROVA 3 (admin): métricas cresceram em relação ao estado anterior.
     const after = await trackingStats(sessionId);
     const profAfter = await auditWalkerProfile();
-
     expect(after.trackingCount).toBeGreaterThan(before.trackingCount);
     expect(after.routeLen).toBeGreaterThan(before.routeLen);
     expect(profAfter.last_location_captured_at).toBeGreaterThan(
       profBefore.last_location_captured_at ?? 0
     );
-    log(`gps during returning: tracking ${before.trackingCount} -> ${after.trackingCount}; route ${before.routeLen} -> ${after.routeLen}`);
+    log(`gps during returning: posição B provada; tracking ${before.trackingCount} -> ${after.trackingCount}; route ${before.routeLen} -> ${after.routeLen}`);
   });
 
   test('06. Owner confirma chegada pela UI (confirm-return-arrival-button)', async () => {
@@ -398,9 +440,10 @@ test.describe('Phase 4.3: Operational Completion Flow (Patch 2)', () => {
     const s = await auditSession(sessionId);
     const actual = Number(s.actual_duration_minutes);
     const distanceDisplay = (Number(s.distance_km) || 0).toFixed(2);
-    const text = (await ownerPage!.getByTestId('review-walk-screen').textContent()) || '';
-    expect(text).toContain(`${actual}`);
-    expect(text).toContain(distanceDisplay);
+
+    // Comparação via testids factuais (nunca textContent genérico).
+    await expect(ownerPage!.getByTestId('review-duration')).toHaveText(`${actual}`);
+    await expect(ownerPage!.getByTestId('review-distance')).toHaveText(distanceDisplay);
   });
 
   test('08. PetWalker recebe completed e sai da sessão ativa', async () => {
@@ -418,6 +461,13 @@ test.describe('Phase 4.3: Operational Completion Flow (Patch 2)', () => {
     await ownerPage!.goto(`/search-walk?resume=${sessionId}`);
     // Não pode voltar para idle/walking nem criar outra sessão.
     await expect(ownerPage!.getByTestId('review-walk-screen')).toBeVisible({ timeout: 20000 });
+
+    // PetWalker REAL reidratado via get_session_walker_profile — nome factual
+    // visível, NÃO apenas o fallback 'Pet Walker'.
+    await expect(
+      ownerPage!.getByText('Walker Operacional E2E', { exact: true })
+    ).toBeVisible({ timeout: 10000 });
+
     await expect(ownerPage!.getByTestId('request-return-button')).toHaveCount(0);
     await expect(ownerPage!.getByTestId('owner-returning-state')).toHaveCount(0);
 
@@ -426,16 +476,23 @@ test.describe('Phase 4.3: Operational Completion Flow (Patch 2)', () => {
     expect(s.current_status).toBe('completed');
   });
 
-  test('10. Tracking freeze operacional pós-completion', async () => {
-    const before = await trackingStats(sessionId);
+  test('10. Tracking freeze operacional pós-completion (LOC_D real)', async () => {
+    const completed = await trackingStats(sessionId);
 
-    // Provider ainda rodando? move para C — nenhum dado pode crescer.
-    await walkerCtx!.setGeolocation(LOC_C);
+    // A rota JÁ contém histórico persistido — o freeze não pode 'passar'
+    // por arrays vazios.
+    expect(completed.routeCoordinates.length).toBeGreaterThan(0);
+
+    // Mudança REAL de posição: LOC_D é distinto de LOC_A/LOC_B/LOC_C. Se o
+    // provider ainda estivesse gravando, um evento GPS novo e distinto
+    // produziria um ponto novo (e o deep equality falharia).
+    await walkerCtx!.setGeolocation(LOC_D);
     await walkerPage!.waitForTimeout(12000);
 
     const after = await trackingStats(sessionId);
-    expect(after.trackingCount).toBe(before.trackingCount);
-    expect(after.routeLen).toBe(before.routeLen);
-    log(`tracking freeze: tracking ${before.trackingCount} -> ${after.trackingCount}; route ${before.routeLen} -> ${after.routeLen}`);
+    // Deep equality da rota inteira — não basta comparar length.
+    expect(after.trackingCount).toBe(completed.trackingCount);
+    expect(after.routeCoordinates).toEqual(completed.routeCoordinates);
+    log(`tracking freeze: tracking ${completed.trackingCount} -> ${after.trackingCount}; route ${completed.routeLen} -> ${after.routeLen}`);
   });
 });

@@ -103,6 +103,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [data, setData] = useState<SessionData | null>(null);
+  const [fetchFailed, setFetchFailed] = useState(false);
   const { toast } = useToast();
 
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -112,11 +113,19 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
     if (!sessionId) return;
     let cancelled = false;
     (async () => {
-      const { data: row } = await supabase
+      const { data: row, error: fetchError } = await supabase
         .from('walk_sessions')
         .select('planned_duration_minutes, actual_duration_minutes, end_time, start_time, distance_km, route_coordinates, home_location, pets:pet_id(name, breed, avatar_url, age, weight)')
         .eq('id', sessionId)
         .maybeSingle();
+      if (fetchError) {
+        // FAIL CLOSED: erro factual — nunca fingir que os dados persistidos
+        // foram carregados. Mantém o fallback visual (data === null) sem
+        // alegar valores reais.
+        console.error('[ReviewWalk] Falha ao carregar dados persistidos da sessão:', fetchError);
+        if (!cancelled) setFetchFailed(true);
+        return;
+      }
       if (cancelled || !row) return;
       const raw = (row.route_coordinates as any) || [];
       const coords: [number, number][] = Array.isArray(raw)
@@ -190,13 +199,24 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
     if (rating === 0) { toast({ title: 'Avaliação necessária', description: 'Selecione de 1 a 5 estrelas.', variant: 'destructive' }); return; }
     setIsSubmitting(true);
     try {
-      if (sessionId) {
-        const { error } = await supabase.from('walk_sessions').update({ rating, feedback: comment || null }).eq('id', sessionId);
-        if (error) {
-          console.error('Review save error:', error);
-          toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
-          return;
-        }
+      // FAIL CLOSED real: sucesso SOMENTE com evidência factual da linha
+      // atualizada (id === sessionId). Sem sessionId, com error, ou sem
+      // retorno da linha — permanece na tela com toast de erro.
+      if (!sessionId) {
+        console.error('[ReviewWalk] Falha ao enviar avaliação: sessionId ausente.');
+        toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('walk_sessions')
+        .update({ rating, feedback: comment || null })
+        .eq('id', sessionId)
+        .select('id, rating, feedback')
+        .maybeSingle();
+      if (error || !data || data.id !== sessionId || Number(data.rating) !== rating) {
+        console.error('[ReviewWalk] Falha ao confirmar avaliação no backend:', { error, data });
+        toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
+        return;
       }
       toast({ title: 'Avaliação enviada' });
       onComplete();
@@ -231,6 +251,17 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: inkSoft }}>Passeio concluído</p>
           <div className="w-9" />
         </div>
+
+        {fetchFailed && (
+          <div className="px-6 pb-2">
+            <p
+              className="text-[10px] font-semibold text-center rounded-full px-3 py-2"
+              style={{ color: '#b45309', background: 'rgba(180,83,9,0.08)', border: '1px solid rgba(180,83,9,0.2)' }}
+            >
+              Não foi possível carregar os dados persistidos do passeio — exibindo resumo local.
+            </p>
+          </div>
+        )}
 
         {/* Map hero — real trajectory */}
         <div className="px-6">
@@ -276,7 +307,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
             ].map((it, i) => (
               <div key={i} className="py-4 text-center" style={i < 2 ? { borderRight: `1px solid ${hairline}` } : undefined}>
                 <p className="text-[9px] font-semibold uppercase tracking-[0.15em] mb-1" style={{ color: inkSoft }}>{it.label}</p>
-                <p className="text-xl font-extrabold tracking-tight leading-none" style={{ color: ink }}>{it.value}</p>
+                <p className="text-xl font-extrabold tracking-tight leading-none" style={{ color: ink }} data-testid={['review-duration', 'review-distance'][i]}>{it.value}</p>
                 <p className="text-[10px] mt-0.5" style={{ color: inkSoft }}>{it.unit}</p>
               </div>
             ))}

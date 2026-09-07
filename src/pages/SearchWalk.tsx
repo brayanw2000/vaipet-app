@@ -373,6 +373,27 @@ const SearchWalk = () => {
           const actual = session.actual_duration_minutes;
           if (typeof actual === 'number' && actual > 0) setWalkDuration(actual * 60);
           else if (end && start) setWalkDuration(Math.floor((end - start) / 1000));
+          // Hidrata o PetWalker REAL da sessão via RPC segura já existente
+          // (SECURITY DEFINER + autorização owner/walker). Nenhum nome
+          // inventado: sem perfil factual, walker permanece não hidratado.
+          if (session.walker_id) {
+            const { data: walkerProfile, error: profileError } = await supabase
+              .rpc('get_session_walker_profile', { _session_id: session.id });
+            if (!profileError && Array.isArray(walkerProfile) && walkerProfile.length > 0) {
+              const profile = walkerProfile[0];
+              const fullName = profile.full_name || 'Pet Walker';
+              setWalker({
+                name: fullName,
+                firstName: String(fullName).split(' ')[0],
+                avatar: profile.avatar_url || '',
+                rating: Number(profile.rating_average || 0),
+                walks: Number(profile.completed_walks || 0),
+                code: '',
+              });
+            } else {
+              console.error('[SearchWalk] completed resume: falha ao hidratar PetWalker real via get_session_walker_profile', profileError);
+            }
+          }
           setSearchStatus('reviewing');
           return;
         }
@@ -2349,7 +2370,7 @@ const SearchWalk = () => {
 
       {/* Review */}
       {searchStatus === 'reviewing' && (
-        <ReviewWalk onBack={() => navigate('/')} onComplete={handleReviewComplete} petName={selectedPets.length === 1 ? selectedPets[0].name : `${selectedPets.length} pets`} walkerName={walker?.firstName ?? 'Pet Walker'} walkDuration={walkDuration} isDarkMode={!isDayMode} sessionId={currentSessionId || undefined} />
+        <ReviewWalk onBack={() => navigate('/')} onComplete={handleReviewComplete} petName={selectedPets.length === 1 ? selectedPets[0].name : `${selectedPets.length} pets`} walkerName={walker?.name ?? walker?.firstName ?? 'Pet Walker'} walkDuration={walkDuration} isDarkMode={!isDayMode} sessionId={currentSessionId || undefined} />
       )}
 
       {/* Cancel Dialog */}
