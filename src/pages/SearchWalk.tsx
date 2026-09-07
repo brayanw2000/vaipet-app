@@ -136,7 +136,6 @@ const classifyRain = (code: number, precipMm: number): RainIntensity => {
 
 const SearchWalk = () => {
   const navigate = useNavigate();
-  // __PROBE2__
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const mapContainer = useRef<HTMLDivElement>(null);
