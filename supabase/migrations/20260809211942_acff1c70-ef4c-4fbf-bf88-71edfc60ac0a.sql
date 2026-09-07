@@ -1,0 +1,1 @@
+-- No-op: Este conteúdo foi consolidado em 20260810190000_phase3_canonical_final.sql

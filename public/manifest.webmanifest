@@ -1,0 +1,13 @@
+{
+  "name": "VaiPet",
+  "short_name": "VaiPet",
+  "description": "App de passeio e cuidados com pets",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFCF7",
+  "theme_color": "#00A978",
+  "icons": [
+    { "src": "/favicon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

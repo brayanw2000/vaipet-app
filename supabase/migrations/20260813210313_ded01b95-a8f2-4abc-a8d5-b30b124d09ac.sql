@@ -1,0 +1,2 @@
+ALTER TABLE public.walk_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.walk_offers ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();

@@ -1,0 +1,360 @@
+
+:root {
+  --vaipet-green: #31d880;
+  --vaipet-green-dark: #20c56e;
+
+  --text-primary: #111111;
+  --text-secondary: #6f747b;
+  --text-tertiary: #9aa0a7;
+
+  --border: #dedfe2;
+  --background: #ffffff;
+
+  --radius-input: 14px;
+  --radius-button: 14px;
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+}
+
+.auth-page {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #FFFFFF; /* Apple System Background */
+  padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+  color: #000000;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 400px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+}
+
+.brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+
+.brand span {
+  color: var(--vaipet-green);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1.4px;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-header h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: #000000;
+}
+
+.auth-header p {
+  margin: 8px 0 0;
+  color: #8E8E93; /* Apple Secondary Label */
+  font-size: 17px;
+  line-height: 22px;
+  letter-spacing: -0.4px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 20px;
+}
+
+.input-wrapper {
+  position: relative;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  border: none;
+  background: #F2F2F7; /* Apple System Gray 6 - Light subtle background */
+  border-radius: 12px;
+  margin-bottom: 12px;
+  padding: 0 16px;
+  transition: background-color 160ms ease;
+}
+
+.input-wrapper:focus-within {
+  background: #E5E5EA; /* Apple System Gray 5 - slightly darker when focused */
+}
+
+.input-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 12px;
+  color: #8E8E93;
+  flex-shrink: 0;
+}
+
+.input-wrapper input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: #000000;
+  font-family: inherit;
+  font-size: 17px;
+  -webkit-appearance: none;
+}
+
+.input-wrapper input::placeholder {
+  color: #9aa0a7;
+}
+
+.password-toggle {
+  width: 44px;
+  height: 44px;
+  margin-right: 6px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #7f858c;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.password-toggle svg {
+  width: 22px;
+  height: 22px;
+}
+
+.primary-button {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--vaipet-green); /* VaiPet Green */
+  color: #000000;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.primary-button:hover {
+  opacity: 0.9;
+}
+
+.primary-button:active {
+  transform: scale(0.98);
+}
+
+.text-button,
+.inline-button {
+  border: 0;
+  background: transparent;
+  color: #007AFF;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 400;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.text-button {
+  align-self: center;
+  margin-top: 18px;
+  min-height: 44px;
+}
+
+.inline-button {
+  color: var(--text-primary);
+  margin-left: 5px;
+  padding: 0;
+}
+
+.register-text {
+  margin: 4px 0 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 12px;
+}
+
+.divider span {
+  height: 1px;
+  flex: 1;
+  background: #e3e4e6;
+}
+
+.divider p {
+  margin: 0;
+  white-space: nowrap;
+  color: #969ba1;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.social-button {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none !important;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #000000;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: background 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+}
+
+.social-button:hover {
+  background: #F2F2F7;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.social-button:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.social-button > span:not(.social-icon) {
+  white-space: nowrap;
+}
+
+.social-icon,
+.apple-icon {
+  position: absolute;
+  left: 20px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.apple-icon {
+  width: 20px;
+  height: 20px;
+  color: #000000;
+}
+
+.arrow {
+  position: absolute;
+  right: 17px;
+  width: 20px;
+  height: 20px;
+  color: #a6abb0;
+}
+
+.legal {
+  max-width: 300px;
+  margin: 32px auto 0;
+  text-align: center;
+  color: #8E8E93;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.legal a {
+  color: #007AFF;
+  text-decoration: none;
+}
+
+@media (max-width: 380px) {
+  .auth-container {
+    padding-top: 40px;
+  }
+  .brand {
+    margin-bottom: 56px;
+  }
+}
+
+/* OTP Specific Styles */
+.otp-container {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.otp-input-wrapper {
+  height: 54px;
+  background: #F2F2F7;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 160ms ease;
+}
+
+.otp-input-wrapper:focus-within {
+  background: #E5E5EA;
+  box-shadow: 0 0 0 2px rgba(49, 216, 128, 0.2);
+}
+
+.otp-digit-input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 600;
+  color: #000;
+  -webkit-appearance: none;
+  padding: 0;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+.pulse-animation {
+  animation: pulse 1.5s infinite ease-in-out;
+}

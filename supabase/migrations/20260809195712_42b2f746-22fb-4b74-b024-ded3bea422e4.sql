@@ -1,0 +1,1 @@
+-- No query needed, using tool to run migration file

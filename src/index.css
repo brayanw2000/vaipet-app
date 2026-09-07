@@ -1,0 +1,133 @@
+#lovable-badge {
+  display: none !important;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700;800;900&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 158 30% 8%;
+
+    --surface: 0 0% 100%;
+    --surface-elevated: 0 0% 100%;
+    --separator: 60 6% 88%;
+
+    --primary: 148 68% 52%; /* VaiPet Green */
+    --primary-foreground: 158 30% 8%;
+
+    --secondary: 148 30% 94%;
+    --secondary-foreground: 158 30% 8%;
+
+    --muted: 60 8% 94%;
+    --muted-foreground: 158 8% 40%;
+
+    --accent: 148 68% 52%;
+    --accent-foreground: 158 30% 8%;
+
+    --destructive: 4 100% 38%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 148 68% 52%;
+    --warning: 38 92% 50%;
+    --error: 4 100% 38%;
+
+    --border: 60 6% 88%;
+    --input: 60 6% 88%;
+    --ring: 148 68% 52%;
+
+    --radius: 12px;
+  }
+
+  .dark {
+    --background: 158 30% 4%;
+    --foreground: 0 0% 98%;
+
+    --surface: 158 25% 8%;
+    --surface-elevated: 158 25% 12%;
+    --separator: 158 20% 18%;
+
+    --primary: 148 68% 52%;
+    --primary-foreground: 158 30% 8%;
+
+    --secondary: 158 20% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 158 20% 14%;
+    --muted-foreground: 158 10% 65%;
+
+    --accent: 148 68% 52%;
+    --accent-foreground: 158 30% 8%;
+
+    --destructive: 4 100% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 158 20% 18%;
+    --input: 158 20% 18%;
+    --ring: 148 68% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    width: 100%;
+  }
+}
+
+/* PWA / iOS standalone: o conteúdo (incluindo o mapa) passa POR BAIXO da
+   ilha dinâmica e da home indicator graças ao viewport-fit=cover +
+   apple-mobile-web-app-status-bar-style=black-translucent.
+   Aqui só garantimos que (1) html/body fiquem escuros quando o sistema
+   estiver em dark mode (para não aparecer barra branca atrás da status
+   bar), e (2) qualquer chrome flutuante (botões no topo) possa usar as
+   utilities pt-safe / pb-safe para não cair atrás da ilha. */
+html, body, #root {
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+@media (prefers-color-scheme: dark) {
+  html, body, #root {
+    background-color: hsl(var(--background));
+  }
+}
+
+@layer utilities {
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
+  .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+  .mt-safe { margin-top: env(safe-area-inset-top, 0px); }
+  .top-safe { top: env(safe-area-inset-top, 0px); }
+  /* Padding-top combinado: respeita a status bar/ilha dinâmica E adiciona
+     uma folga extra de 16px abaixo dela, para os botões flutuantes não
+     "colarem" na ilha do iPhone. */
+  .pt-safe-plus { padding-top: calc(env(safe-area-inset-top, 0px) + 16px); }
+  .pt-safe-plus-lg { padding-top: calc(env(safe-area-inset-top, 0px) + 24px); }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

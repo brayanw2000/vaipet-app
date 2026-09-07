@@ -1,0 +1,3 @@
+-- Historical no-op placeholder.
+-- Version 20260817041000 was registered manually in the remote migration
+-- history by a previously applied migration. No schema change belongs here.
