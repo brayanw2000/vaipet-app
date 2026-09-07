@@ -183,15 +183,26 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
     return () => { map.remove(); mapRef.current = null; };
   }, [data, isDarkMode]);
 
+  // FAIL CLOSED: a tela só avança (onComplete) após o update ser confirmado
+  // pelo backend (error === null). Em erro: permanece na tela, sem toast de
+  // sucesso, e o usuário pode tentar novamente.
   const handleSubmit = async () => {
     if (rating === 0) { toast({ title: 'Avaliação necessária', description: 'Selecione de 1 a 5 estrelas.', variant: 'destructive' }); return; }
     setIsSubmitting(true);
     try {
-      if (sessionId) await supabase.from('walk_sessions').update({ rating, feedback: comment || null }).eq('id', sessionId);
+      if (sessionId) {
+        const { error } = await supabase.from('walk_sessions').update({ rating, feedback: comment || null }).eq('id', sessionId);
+        if (error) {
+          console.error('Review save error:', error);
+          toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
+          return;
+        }
+      }
       toast({ title: 'Avaliação enviada' });
       onComplete();
-    } catch {
-      toast({ title: 'Erro', description: 'Tente novamente.', variant: 'destructive' });
+    } catch (e) {
+      console.error('Review save exception:', e);
+      toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -212,7 +223,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
     : null;
 
   return (
-    <div className="absolute inset-0 z-30 overflow-y-auto" style={{ background: surface }}>
+    <div className="absolute inset-0 z-30 overflow-y-auto" style={{ background: surface }} data-testid="review-walk-screen">
       <div className="min-h-full flex flex-col max-w-md mx-auto">
         {/* Minimal header */}
         <div className="px-6 pt-12 pb-6 flex items-center justify-between">

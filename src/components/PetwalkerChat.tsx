@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface PetwalkerChatProps {
   open: boolean;
   onClose: () => void;
-  onAuthorizeReturn: () => void;
+  onAuthorizeReturn: () => Promise<boolean>;
   petName: string;
   walkerName: string;
   walkerAvatar?: string;
@@ -38,6 +38,7 @@ export const PetwalkerChat: React.FC<PetwalkerChatProps> = ({
   }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [authorizingId, setAuthorizingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -85,13 +86,29 @@ export const PetwalkerChat: React.FC<PetwalkerChatProps> = ({
     }
   };
 
-  const authorize = (id: string) => {
-    setMessages((prev) => prev.map((m) => m.id === id ? { ...m, authorized: true, showReturnCta: false } : m));
-    setMessages((prev) => [...prev, {
-      id: uid(), role: 'assistant',
-      content: `Combinado! Tô voltando agora com ${petName} 🏠`,
-    }]);
-    onAuthorizeReturn();
+  // FAIL CLOSED: o chat NÃO é autoridade de domínio. Só marca o retorno
+  // como autorizado quando onAuthorizeReturn() confirmar (=== true).
+  const authorize = async (id: string) => {
+    if (authorizingId) return;
+    setAuthorizingId(id);
+    try {
+      const ok = await onAuthorizeReturn();
+      if (ok) {
+        setMessages((prev) => prev.map((m) => m.id === id ? { ...m, authorized: true, showReturnCta: false } : m));
+        setMessages((prev) => [...prev, {
+          id: uid(), role: 'assistant',
+          content: `Combinado! Tô voltando agora com ${petName} 🏠`,
+        }]);
+      } else {
+        // Sem confirmação: não marca authorized, permite nova tentativa.
+        setMessages((prev) => [...prev, {
+          id: uid(), role: 'assistant',
+          content: 'Não consegui iniciar o retorno agora. Pode tentar de novo? 📶',
+        }]);
+      }
+    } finally {
+      setAuthorizingId(null);
+    }
   };
 
   if (!open) return null;
@@ -153,10 +170,12 @@ export const PetwalkerChat: React.FC<PetwalkerChatProps> = ({
                     </p>
                     <button
                       onClick={() => authorize(m.id)}
-                      className="w-full py-2.5 rounded-xl text-white text-[13px] font-extrabold flex items-center justify-center gap-1.5 active:scale-[0.98] transition"
+                      disabled={authorizingId === m.id}
+                      className="w-full py-2.5 rounded-xl text-white text-[13px] font-extrabold flex items-center justify-center gap-1.5 active:scale-[0.98] transition disabled:opacity-60"
                       style={{ background: '#31D880', boxShadow: '0 8px 20px rgba(49,216,128,0.35)' }}
                     >
-                      <ShieldCheck className="w-4 h-4" /> Autorizar retorno
+                      {authorizingId === m.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                      {authorizingId === m.id ? 'Autorizando…' : 'Autorizar retorno'}
                     </button>
                   </div>
                 )}

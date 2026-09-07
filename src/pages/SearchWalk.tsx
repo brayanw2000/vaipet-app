@@ -136,6 +136,7 @@ const classifyRain = (code: number, precipMm: number): RainIntensity => {
 
 const SearchWalk = () => {
   const navigate = useNavigate();
+  // __PROBE2__
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -259,6 +260,9 @@ const SearchWalk = () => {
   // de APRESENTAÇÃO (animações e qual componente aparece).
   // ────────────────────────────────────────────────────────────────
   const [sessionStatus, setSessionStatus] = useState<WalkStatus | null>(null);
+  // O banco é a autoridade do retorno: isReturning DERIVA de
+  // `walk_sessions.current_status` — nunca de um boolean otimista local.
+  const isReturning = sessionStatus === 'returning';
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [walker, setWalker] = useState<WalkerProfile | null>(null);
   const [pickupRoute, setPickupRoute] = useState<[number, number][]>([]);
@@ -266,8 +270,10 @@ const SearchWalk = () => {
   // Resume walk state.
   const [isResuming, setIsResuming] = useState<boolean>(() => !!searchParams.get('resume'));
   const resumeHandledRef = useRef(false);
-  // Return phase state.
-  const [isReturning, setIsReturning] = useState(false);
+  // Return phase state — estados EXCLUSIVAMENTE de loading. A autoridade do
+  // domínio (returning/completed) vive em `sessionStatus`.
+  const [isRequestingReturn, setIsRequestingReturn] = useState(false);
+  const [isConfirmingArrival, setIsConfirmingArrival] = useState(false);
   const [matchingExpiresAt, setMatchingExpiresAt] = useState<string | null>(null);
 
   useEffect(() => {
@@ -313,8 +319,11 @@ const SearchWalk = () => {
           setSearchParams({}, { replace: true });
           return;
         }
-        // If the walk is already finished, drop back to the normal flow.
-        if (session.current_status !== 'in_progress' && session.current_status !== 'returning') {
+        // Sessões retomáveis: in_progress / returning / completed.
+        // completed hidrata a sessão e vai DIRETO para a avaliação — nunca
+        // volta para idle/walking e nunca cria outra sessão.
+        const resumeStatuses: WalkStatus[] = ['in_progress', 'returning', 'completed'];
+        if (!resumeStatuses.includes(session.current_status as WalkStatus)) {
           setIsResuming(false);
           setSearchParams({}, { replace: true });
           return;
@@ -358,7 +367,16 @@ const SearchWalk = () => {
         setCurrentSessionId(session.id);
         setSessionStatus(session.current_status as WalkStatus);
         setWalkStartTime(new Date(session.start_time).getTime());
-        if (session.current_status === 'returning') setIsReturning(true);
+        if (session.current_status === 'completed') {
+          // Métricas persistidas pelo backend (end_time / actual_duration_minutes).
+          const end = session.end_time ? new Date(session.end_time).getTime() : null;
+          const start = session.start_time ? new Date(session.start_time).getTime() : null;
+          const actual = session.actual_duration_minutes;
+          if (typeof actual === 'number' && actual > 0) setWalkDuration(actual * 60);
+          else if (end && start) setWalkDuration(Math.floor((end - start) / 1000));
+          setSearchStatus('reviewing');
+          return;
+        }
         setSearchStatus('walking');
       } catch (e) {
         console.error('Resume walk failed:', e);
@@ -1032,45 +1050,82 @@ const SearchWalk = () => {
     }
   }, [user, walkerMarker, userLocation, addRouteToMap]);
 
-  // Customer authorizes return via chat.
-  const handleAuthorizeReturn = async () => {
-    if (isReturning) return;
-    setIsReturning(true);
-    if (currentSessionId) {
-      const { error } = await supabase.rpc('customer_request_return', {
+  // Tutor autoriza o retorno — FAIL CLOSED. NUNCA marca retorno otimista
+  // antes da RPC. Sucesso SOMENTE com error === null && data === true; em
+  // qualquer outro caso permanece in_progress e retorna false.
+  const handleAuthorizeReturn = async (): Promise<boolean> => {
+    if (!currentSessionId || sessionStatus !== 'in_progress' || isRequestingReturn) return false;
+    setIsRequestingReturn(true);
+    try {
+      const { data, error } = await supabase.rpc('customer_request_return', {
         _session_id: currentSessionId
       });
-      if (error) {
+      if (error || data !== true) {
         console.error('Falha ao iniciar retorno:', error);
-        toast.error('Erro ao solicitar retorno');
-        setIsReturning(false);
+        toast.error('Não foi possível iniciar o retorno. Tente novamente.');
+        return false;
       }
+      // Refetch imediato do status autoritativo (não depender do poll).
+      const { data: session } = await supabase
+        .from('walk_sessions')
+        .select('current_status')
+        .eq('id', currentSessionId)
+        .maybeSingle();
+      if (session?.current_status) setSessionStatus(session.current_status as WalkStatus);
+      return true;
+    } catch (e) {
+      console.error('Falha ao iniciar retorno:', e);
+      toast.error('Não foi possível iniciar o retorno. Tente novamente.');
+      return false;
+    } finally {
+      setIsRequestingReturn(false);
     }
   };
 
-  // Arrival confirmation (final status).
+  // Confirmação final do Tutor — FAIL CLOSED. Só conclui quando o domínio
+  // estiver em `returning` e quando o backend confirmar (error === null &&
+  // data === true). Nunca abre a avaliação em falso positivo.
   const handleConfirmArrival = async () => {
-    const dur = Math.floor((Date.now() - walkStartTime) / 1000);
-    setWalkDuration(dur);
-    if (currentSessionId) {
-      const { error } = await supabase.rpc('customer_confirm_arrival', {
+    if (!currentSessionId || sessionStatus !== 'returning' || isConfirmingArrival) return;
+    setIsConfirmingArrival(true);
+    try {
+      const { data, error } = await supabase.rpc('customer_confirm_arrival', {
         _session_id: currentSessionId
       });
-      if (error) {
+      if (error || data !== true) {
         console.error('Falha ao confirmar chegada:', error);
-        toast.error('Erro ao confirmar chegada');
+        toast.error('Não foi possível confirmar a chegada. Tente novamente.');
         return;
       }
+      setSessionStatus('completed');
+      // Métricas persistidas pelo backend (end_time / actual_duration_minutes).
+      const { data: session } = await supabase
+        .from('walk_sessions')
+        .select('end_time, start_time, actual_duration_minutes')
+        .eq('id', currentSessionId)
+        .maybeSingle();
+      if (session) {
+        const actual = session.actual_duration_minutes;
+        const end = session.end_time ? new Date(session.end_time).getTime() : null;
+        const start = session.start_time ? new Date(session.start_time).getTime() : null;
+        if (typeof actual === 'number' && actual > 0) setWalkDuration(actual * 60);
+        else if (end && start) setWalkDuration(Math.floor((end - start) / 1000));
+      }
+      setSearchStatus('reviewing');
+    } catch (e) {
+      console.error('Falha ao confirmar chegada:', e);
+      toast.error('Não foi possível confirmar a chegada. Tente novamente.');
+    } finally {
+      setIsConfirmingArrival(false);
     }
-    setSearchStatus('reviewing');
   };
   const handleReviewComplete = () => { navigate('/'); setSearchStatus('idle'); cleanupPreviousSearch(); };
-  
-  const handleRequestReturn = async () => {
-    const dur = Math.floor((Date.now() - walkStartTime) / 1000);
-    setWalkDuration(dur);
-    setSearchStatus('reviewing');
-  };
+
+  // Voltar durante o passeio: SOMENTE navega para a home. NÃO chama
+  // customer_confirm_arrival, NÃO chama customer_request_return, NÃO altera
+  // walk_sessions e NÃO limpa a sessão ativa — o passeio segue ativo no
+  // backend e pode ser retomado por ?resume=.
+  const handleLeaveActiveWalk = () => { navigate('/'); };
 
   useEffect(() => {
     if (!currentSessionId) return;
@@ -1173,6 +1228,30 @@ const SearchWalk = () => {
       setSearchStatus('walking');
     }
   }, [isTrackableSession, searchStatus]);
+
+  // completed é um estado terminal do domínio: promove a apresentação para a
+  // avaliação e hidrata métricas persistidas do backend. NUNCA volta para
+  // walking (isTrackableStatus exclui completed, e este efeito só avança).
+  useEffect(() => {
+    if (sessionStatus !== 'completed' || searchStatus === 'reviewing') return;
+    if (currentSessionId) {
+      (async () => {
+        const { data: session } = await supabase
+          .from('walk_sessions')
+          .select('end_time, start_time, actual_duration_minutes')
+          .eq('id', currentSessionId)
+          .maybeSingle();
+        if (session) {
+          const actual = session.actual_duration_minutes;
+          const end = session.end_time ? new Date(session.end_time).getTime() : null;
+          const start = session.start_time ? new Date(session.start_time).getTime() : null;
+          if (typeof actual === 'number' && actual > 0) setWalkDuration(actual * 60);
+          else if (end && start) setWalkDuration(Math.floor((end - start) / 1000));
+        }
+      })();
+    }
+    setSearchStatus('reviewing');
+  }, [sessionStatus, searchStatus, currentSessionId]);
   
   // ────────────────────────────────────────────────────────────────
   // Posição atual do PetWalker: fonte canônica ÚNICA é a RPC segura
@@ -1235,7 +1314,9 @@ const SearchWalk = () => {
   const [isCancellingWalk, setIsCancellingWalk] = useState(false);
   const handleCancelWalk = async () => {
     setIsCancellingWalk(true);
-    await handleAuthorizeReturn();
+    const ok = await handleAuthorizeReturn();
+    // Fail closed: sem confirmação do backend, desfaz o estado de cancelamento.
+    if (!ok) setIsCancellingWalk(false);
   };
   const handleCancelComplete = async () => {
     if (currentSessionId) {
@@ -2237,8 +2318,7 @@ const SearchWalk = () => {
       {/* Walking */}
       {searchStatus === 'walking' && (
         <WalkInProgress
-          onBack={handleConfirmArrival}
-          onRequestReturn={handleRequestReturn}
+          onBack={handleLeaveActiveWalk}
           onOpenChat={handleOpenChat}
           onRequestPhotos={handleRequestPhotos}
           onConfirmArrival={handleConfirmArrival}
@@ -2270,7 +2350,7 @@ const SearchWalk = () => {
 
       {/* Review */}
       {searchStatus === 'reviewing' && (
-        <ReviewWalk onBack={() => setSearchStatus('walking')} onComplete={handleReviewComplete} petName={selectedPets.length === 1 ? selectedPets[0].name : `${selectedPets.length} pets`} walkerName={walker?.firstName ?? 'Pet Walker'} walkDuration={walkDuration} isDarkMode={!isDayMode} sessionId={currentSessionId || undefined} />
+        <ReviewWalk onBack={() => navigate('/')} onComplete={handleReviewComplete} petName={selectedPets.length === 1 ? selectedPets[0].name : `${selectedPets.length} pets`} walkerName={walker?.firstName ?? 'Pet Walker'} walkDuration={walkDuration} isDarkMode={!isDayMode} sessionId={currentSessionId || undefined} />
       )}
 
       {/* Cancel Dialog */}

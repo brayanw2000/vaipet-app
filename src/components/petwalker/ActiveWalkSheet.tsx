@@ -23,34 +23,38 @@ export const ActiveWalkSheet = ({ activeRequest }: ActiveWalkSheetProps) => {
 
   const status = activeRequest.current_status;
   const isInProgress = status === 'in_progress';
+  const isReturningSheet = status === 'returning';
+  // returning usa o mesmo tratamento visual escuro do in_progress.
+  const isDarkSheet = isInProgress || isReturningSheet;
 
   return (
     <BottomSheet 
       isOpen={true} 
       navigationOffset={false}
       dismissible={false}
-      className={cn(isInProgress ? "bg-ink text-white" : "bg-white")}
+      className={cn(isDarkSheet ? "bg-ink text-white" : "bg-white")}
     >
-      <div className="space-y-6">
+      <div className="space-y-6" data-testid={isReturningSheet ? "petwalker-returning-sheet" : undefined}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={cn(
               "w-2 h-2 rounded-full",
-              status === 'in_progress' ? "bg-[#31D880] animate-pulse" : "bg-blue-500"
+              (status === 'in_progress' || status === 'returning') ? "bg-[#31D880] animate-pulse" : "bg-blue-500"
             )} />
             <h3 className={cn(
               "text-lg font-bold font-space uppercase tracking-tight", 
-              isInProgress ? "text-white" : "text-ink"
+              isDarkSheet ? "text-white" : "text-ink"
             )}>
               {status === 'accepted' && 'Passeio confirmado'}
               {status === 'heading_to_pickup' && 'A caminho do pet'}
               {status === 'arrived' && 'Você chegou'}
               {status === 'in_progress' && 'Passeio em andamento'}
+              {status === 'returning' && 'Retornando para casa'}
             </h3>
           </div>
           <div className={cn(
             "px-3 py-1 rounded-full text-[10px] font-black uppercase", 
-            isInProgress ? "bg-white/10 text-white" : "bg-gray-100 text-muted-foreground"
+            isDarkSheet ? "bg-white/10 text-white" : "bg-gray-100 text-muted-foreground"
           )}>
              {activeRequest.planned_duration_minutes} min
           </div>
@@ -67,7 +71,7 @@ export const ActiveWalkSheet = ({ activeRequest }: ActiveWalkSheetProps) => {
           <div>
              <h4 className={cn(
                "text-2xl font-black font-space leading-none", 
-               isInProgress ? "text-white" : "text-ink"
+               isDarkSheet ? "text-white" : "text-ink"
              )}>
                {activeRequest.pet?.name || 'Pet'}
              </h4>
@@ -84,7 +88,7 @@ export const ActiveWalkSheet = ({ activeRequest }: ActiveWalkSheetProps) => {
           <div className="space-y-2">
             <div className="flex items-start gap-2 text-sm">
               <MapPin size={16} className="text-[#31D880] mt-0.5 shrink-0" />
-              <p className={cn("font-bold leading-tight", isInProgress ? "text-white" : "text-ink")}>
+              <p className={cn("font-bold leading-tight", isDarkSheet ? "text-white" : "text-ink")}>
                 {activeRequest.meeting_point_address || 'Endereço do encontro'}
               </p>
             </div>
@@ -93,7 +97,7 @@ export const ActiveWalkSheet = ({ activeRequest }: ActiveWalkSheetProps) => {
                  <Navigation size={12} />
                  <span>{activeRequest.distance_km ? `${Number(activeRequest.distance_km).toFixed(1)} km` : 'Calculando rota...'}</span>
                </div>
-               <span className={cn("font-black tracking-tight", isInProgress ? "text-white" : "text-ink")}>
+               <span className={cn("font-black tracking-tight", isDarkSheet ? "text-white" : "text-ink")}>
                  R$ {((activeRequest.total_price_cents || 0)/100).toFixed(2)}
                </span>
             </div>
@@ -128,13 +132,14 @@ export const ActiveWalkSheet = ({ activeRequest }: ActiveWalkSheetProps) => {
           }}
           className={cn(
             "w-full h-14 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all",
-            isInProgress ? "bg-[#31D880] text-ink hover:bg-[#2bc473]" : "bg-ink text-white hover:bg-ink/90"
+            isDarkSheet ? "bg-[#31D880] text-ink hover:bg-[#2bc473]" : "bg-ink text-white hover:bg-ink/90"
           )}
         >
           {status === 'accepted' && 'Iniciar deslocamento'}
           {status === 'heading_to_pickup' && 'Cheguei ao local'}
           {status === 'arrived' && 'Validar PIN'}
           {status === 'in_progress' && 'Gerenciar Passeio'}
+          {status === 'returning' && 'Acompanhar retorno'}
         </Button>
       </div>
     </BottomSheet>

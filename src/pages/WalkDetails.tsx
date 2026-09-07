@@ -37,8 +37,6 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
   const isDarkMode = theme === 'dark';
   const [walk, setWalk] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [concluding, setConcluding] = useState(false);
-  const [concludeError, setConcludeError] = useState<string | null>(null);
   const [arriving, setArriving] = useState(false);
 
   const { coords, accuracy, status: gpsStatus } = usePetwalkerGps();
@@ -74,31 +72,9 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
     }
   };
 
-  const handleCompleteWalk = async () => {
-    if (concluding || !walk?.id) return;
-    setConcluding(true);
-    setConcludeError(null);
-    try {
-      const { data, error } = await supabase.rpc('petwalker_complete_walk', {
-        _session_id: walk.id
-      });
-      if (error) {
-        setConcludeError(error.message);
-        setConcluding(false);
-        return;
-      }
-      if (data === true) {
-        navigate('/petwalker');
-        return;
-      }
-      setConcludeError('Não foi possível concluir o passeio. Tente novamente.');
-      setConcluding(false);
-    } catch (e) {
-      setConcludeError('Erro inesperado ao concluir o passeio. Tente novamente.');
-      setConcluding(false);
-    }
-  };
-
+  // Phase 4.3 Patch 2: conclusão unilateral REMOVIDA — o PetWalker NÃO
+  // conclui o passeio. Somente o Tutor chama customer_confirm_arrival.
+  // petwalker_complete_walk permanece admin-only (intacta).
   useEffect(() => {
     if (!id || !user) return;
     (async () => {
@@ -112,6 +88,57 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
       setLoading(false);
     })();
   }, [id, user]);
+
+  // Sessão autoritativa: fetch inicial + postgres_changes (realtime) +
+  // polling de fallback (~3s) enquanto a sessão estiver ativa. Ao receber
+  // `completed`, para o acompanhamento (remove subscription + polling) e
+  // navega para o painel canônico do PetWalker.
+  useEffect(() => {
+    if (!id || !user || !walk) return;
+    if (walk.current_status === 'completed' || walk.current_status === 'cancelled') return;
+    let active = true;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const stop = () => {
+      if (!active) return;
+      active = false;
+      if (pollTimer) clearInterval(pollTimer);
+      if (channel) supabase.removeChannel(channel);
+    };
+    const handleUpdate = (next: any) => {
+      if (!active || !next) return;
+      setWalk(next);
+      if (next.current_status === 'completed') {
+        toast.success('Passeio concluído pelo tutor');
+        stop();
+        navigate('/petwalker', { replace: true });
+      } else if (next.current_status === 'cancelled') {
+        stop();
+        navigate('/petwalker', { replace: true });
+      }
+    };
+    channel = supabase
+      .channel(`walk-details-${id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'walk_sessions',
+        filter: `id=eq.${id}`
+      }, (payload) => {
+        handleUpdate(payload.new as any);
+      })
+      .subscribe();
+    pollTimer = setInterval(async () => {
+      const { data } = await supabase
+        .from('walk_sessions')
+        .select('*, pets:pet_id(name, avatar_url)')
+        .eq('id', id)
+        .maybeSingle();
+      if (data) handleUpdate(data);
+    }, 3000);
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user, walk ? walk.id : null]);
 
   // Initialize map with the persisted trail
   useEffect(() => {
@@ -267,7 +294,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
         <div className="rounded-3xl border border-border/40 bg-card p-6 space-y-6">
           <TimelineRow icon={<Calendar className="w-4 h-4 text-accent" />} label="Data" value={fmtDate(walk.start_time || walk.created_at)} />
           <TimelineRow icon={<Clock className="w-4 h-4 text-accent" />} label="Horário de início" value={fmtTime(walk.start_time || walk.created_at)} />
-          <TimelineRow icon={<Flag className="w-4 h-4 text-accent" />} label="Horário de término" value={fmtTime(walk.completed_at)} />
+          <TimelineRow icon={<Flag className="w-4 h-4 text-accent" />} label="Horário de término" value={fmtTime(walk.end_time || walk.completed_at)} />
           <TimelineRow icon={<Home className="w-4 h-4 text-accent" />} label="Ponto de encontro" value={walk.meeting_point_address || 'Endereço não disponível'} />
         </div>
       </div>
@@ -375,18 +402,20 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
             </button>
           )}
 
+          {walk.current_status === 'returning' && (
+            <div data-testid="walker-returning-state" className="bg-ink/5 border border-ink/10 rounded-2xl p-4 mb-1 text-center space-y-1">
+              <p className="text-sm font-black text-ink">Retornando para casa</p>
+              <p className="text-[11px] text-ink/60 leading-snug">
+                Leve o pet de volta ao ponto de encontro. O GPS continua ativo. O Tutor confirmará a chegada.
+              </p>
+            </div>
+          )}
+
           {walk.current_status === 'in_progress' && (
-            <>
-              {concludeError && (
-                <div className="w-full rounded-2xl bg-destructive/10 text-destructive text-sm font-semibold px-4 py-3 mb-1">
-                  {concludeError}
-                </div>
-              )}
-              <div className="bg-ink/5 border border-ink/10 rounded-2xl p-4 mb-1 text-center">
-                <p className="text-xs font-bold text-ink/60" data-testid="walk-in-progress-marker">Aviso de passeio em andamento</p>
-                <p className="text-[10px] text-ink/40">Finalização indisponível na Phase 4.1</p>
-              </div>
-            </>
+            <div className="bg-ink/5 border border-ink/10 rounded-2xl p-4 mb-1 text-center">
+              <p className="text-xs font-bold text-ink/60" data-testid="walk-in-progress-marker">Passeio em andamento</p>
+              <p className="text-[10px] text-ink/40">O Tutor confirmará a chegada — o PetWalker não conclui unilateralmente.</p>
+            </div>
           )}
 
 

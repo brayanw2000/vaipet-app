@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { ArrowLeft, MessageCircle, Camera, RotateCcw, CheckCircle, Phone, Shield, Clock, Route, PawPrint, Navigation, KeyRound, Gauge, Sun, Moon, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Home, Loader2, MessageCircle, Camera, RotateCcw, CheckCircle, Phone, Shield, Clock, Route, PawPrint, Navigation, KeyRound, Gauge, Sun, Moon, X, ChevronDown } from 'lucide-react';
 import { PetwalkerChat } from './PetwalkerChat';
 import { SupportChat } from './SupportChat';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -13,12 +13,11 @@ import { hideMapLabels, tintMapInk, enrichMap } from '@/lib/mapStyle';
 
 interface WalkInProgressProps {
   onBack: () => void;
-  onRequestReturn: () => void;
   onOpenChat: () => void;
   onRequestPhotos: () => void;
   onConfirmArrival: () => void;
-  /** Disparado quando o cliente autoriza o retorno do passeio dentro do chat. */
-  onAuthorizeReturn?: () => void;
+  /** Autoriza o retorno — FAIL CLOSED: true somente com confirmação do backend. */
+  onAuthorizeReturn?: () => Promise<boolean>;
   /** Disparado quando o cliente confirma o cancelamento do passeio em andamento. */
   onCancelWalk?: () => void;
   /** Disparado quando o pet chega em casa após um cancelamento. */
@@ -79,7 +78,7 @@ const orderStops = (stops: StopLike[]): Array<StopLike & { order: number }> => {
 };
 
 export const WalkInProgress: React.FC<WalkInProgressProps> = ({
-  onBack, onRequestReturn, onOpenChat, onRequestPhotos, onConfirmArrival,
+  onBack, onOpenChat, onRequestPhotos, onConfirmArrival,
   onAuthorizeReturn, onCancelWalk, onCancelComplete, isCancelling = false,
   petName, petId, petAvatar, walkerName, walkerAvatar, walkerLocation, petLocation,
   livePosition = null,
@@ -173,7 +172,6 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const prevLocForBearingRef = useRef<[number, number] | null>(null);
   const [currentPetLocation, setCurrentPetLocation] = useState<[number, number] | null>(petLocation || walkerLocation);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [showReturnDialog, setShowReturnDialog] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
   const [currentRouteIndex, setCurrentRouteIndex] = useState(0);
   const [distanceWalked, setDistanceWalked] = useState(0);
@@ -182,7 +180,6 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const [chatOpen, setChatOpen] = useState(false);
   // Pop-up de suporte ao vivo VaiPet (acionado pelo botão "Precisa de ajuda?").
   const [supportOpen, setSupportOpen] = useState(false);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const cancelFiredRef = useRef(false);
   const [phase, setPhase] = useState<'pickup' | 'arrived' | 'walking'>(() => {
     if (sessionId) {
@@ -194,6 +191,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const phaseRef = useRef<'pickup' | 'arrived' | 'walking'>(phase);
   const isComingRef = useRef(isComing);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [returnRequestLoading, setReturnRequestLoading] = useState(false);
   const [walkStartedAt, setWalkStartedAt] = useState<Date | null>(isComing ? null : walkStartTime);
   const [etaSec, setEtaSec] = useState<number>(0);
   const [remainingMeters, setRemainingMeters] = useState<number>(0);
@@ -2279,47 +2277,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   // overwrote a longer trail with a shorter one, which caused the
   // "rastro zerou" bug after reopening a long-running walk.
 
-  // Encerramento do passeio — UMA única transação no banco:
-  //   • status = 'completed'
-  //   • end_time = now()
-  //   • actual_duration_minutes = elapsed/60 (mínimo 1 para evitar 0 min)
-  //   • distance_km preservado (o tracking já vinha gravando)
-  // Antes faziamos dois updates (returning → completed) o que deixava o
-  // banco inconsistente se o segundo update falhasse. Agora é atômico e
-  // o componente pai apenas troca a tela para a avaliação.
-  const handleRequestReturn = async () => {
-    setShowReturnDialog(false);
-    if (!sessionId) {
-      onRequestReturn();
-      return;
-    }
-
-    try {
-      setConcluding(true);
-      // RPC simplified: server calculates distance and duration based on persisted trail
-      const { data, error } = await supabase.rpc('petwalker_complete_walk', { 
-        _session_id: sessionId
-      });
-      
-      if (error) {
-        console.error('Error concluding walk:', error);
-        alert(`Erro ao concluir passeio: ${error.message}. Tente novamente.`);
-        setConcluding(false);
-        return;
-      }
-
-      if (data === true) {
-        onRequestReturn();
-      } else {
-        alert('Falha ao concluir passeio no servidor. Verifique sua conexão e tente novamente.');
-        setConcluding(false);
-      }
-    } catch (e) {
-      console.error('Unexpected error during walk conclusion:', e);
-      alert('Ocorreu um erro inesperado. Tente novamente.');
-      setConcluding(false);
-    }
-  };
+  // Phase 4.3 Patch 2: fluxo legado de conclusão unilateral REMOVIDO.
+  // O PetWalker NÃO conclui o passeio — somente o Tutor chama
+  // customer_confirm_arrival. petwalker_complete_walk permanece admin-only.
 
   const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
   const totalSec = walkDurationMinutes * 60;
@@ -2349,11 +2309,6 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     return () => window.clearTimeout(t);
   }, [isCancelling, isReturning, remainingMeters, etaSec, onCancelComplete]);
 
-  // SEM AUTO-ENCERRAMENTO: a chegada ao ponto de origem apenas altera a
-  // interface. A conclusão do passeio exige clique explícito e confirmado
-  // do PetWalker (nenhum useEffect chama handleRequestReturn).
-  const arrivedAtOrigin =
-    isReturning && !isCancelling && phase === 'walking' && remainingMeters <= 8 && etaSec <= 0;
 
   const recenter = () => {
     if (!map.current) return;
@@ -2420,13 +2375,10 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
             <button
               onClick={() => {
                 if (isCancelling) return;
-                // No passeio em andamento, "Voltar" apenas fecha a tela e volta
-                // para a home, pois o passeio segue ativo no backend/background.
-                if (phase === 'walking' && !isReturning) {
-                  onBack();
-                  return;
-                }
-                setCancelDialogOpen(true);
+                // O botão voltar NUNCA conclui e NUNCA altera a sessão:
+                // apenas volta para a home. O passeio segue ativo no backend
+                // e pode ser retomado por ?resume=.
+                onBack();
               }}
               className="pointer-events-auto w-11 h-11 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-95 transition-transform"
               style={{ background: chrome.bg, border: chrome.border, boxShadow: chrome.shadow }}
@@ -2483,6 +2435,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                 return (
                   <div
                     key="returning"
+                    data-testid="owner-returning-state"
                     className="pointer-events-auto flex items-center gap-3 backdrop-blur-md rounded-full pl-2 pr-2 py-2 animate-pill-content-in transition-all duration-500 ease-out min-w-[260px]"
                     style={{ background: chrome.bg, border: chrome.border, boxShadow: chrome.shadow }}
                   >
@@ -2492,18 +2445,22 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         : <div className="w-full h-full bg-[#31d880] text-white flex items-center justify-center font-extrabold">{walkerName.charAt(0).toUpperCase()}</div>}
                     </div>
                     <div className="flex flex-col leading-tight pr-1 flex-1">
-                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>🏠 Retornando</span>
+                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>PetWalker retornando</span>
                       <span className="text-[15px] font-extrabold tabular-nums whitespace-nowrap" style={{ color: chrome.text }}>
                         {etaSec > 0 ? `Chega em ${fmtEta(etaSec)}` : 'Quase chegando…'}
+                      </span>
+                      <span className="text-[10px] font-medium leading-snug mt-0.5" style={{ color: chrome.muted }}>
+                        Confirme somente quando o PetWalker estiver de volta com o pet.
                       </span>
                     </div>
                     <button
                       onClick={onConfirmArrival}
+                      data-testid="confirm-return-arrival-button"
                       className="ml-1 pointer-events-auto h-10 px-3.5 rounded-full text-[13px] font-extrabold text-white flex items-center gap-1.5 active:scale-95 transition-transform whitespace-nowrap"
                       style={{ background: '#22C55E', boxShadow: '0 6px 18px rgba(34,197,94,0.35)' }}
                       aria-label="Confirmar chegada"
                     >
-                      <CheckCircle className="w-3.5 h-3.5" /> Cheguei
+                      <CheckCircle className="w-3.5 h-3.5" /> Confirmar chegada
                     </button>
                   </div>
                 );
@@ -2586,6 +2543,25 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         {menuOpen ? <X className="w-[18px] h-[18px]" /> : <ChevronDown className="w-[18px] h-[18px]" />}
                       </button>
                     </div>
+                    {/* CTA determinístico do Tutor — solicitar retorno via banco. */}
+                    <button
+                      onClick={async () => {
+                        if (returnRequestLoading) return;
+                        setReturnRequestLoading(true);
+                        try {
+                          if (onAuthorizeReturn) await onAuthorizeReturn();
+                        } finally {
+                          setReturnRequestLoading(false);
+                        }
+                      }}
+                      data-testid="request-return-button"
+                      disabled={returnRequestLoading}
+                      className="pointer-events-auto flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-extrabold text-white active:scale-95 transition-transform disabled:opacity-60"
+                      style={{ background: '#0B1410', boxShadow: '0 6px 18px rgba(0,0,0,0.25)' }}
+                    >
+                      {returnRequestLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Home className="w-4 h-4" />}
+                      Voltar para casa
+                    </button>
                   </div>
                 );
               }
@@ -2739,74 +2715,10 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           })()
         )}
 
-        {/* Always-mounted return dialog (the floating right-rail button toggles it during the walk) */}
-        {arrivedAtOrigin && (
-          <div className="absolute left-4 right-4 bottom-6 z-50">
-            <div className="rounded-[24px] bg-card shadow-2xl p-4 text-center space-y-3">
-              <p className="text-base font-extrabold text-foreground">Você chegou ao destino</p>
-              <button
-                onClick={() => setShowReturnDialog(true)}
-                disabled={concluding}
-                className="w-full min-h-[44px] rounded-xl text-white font-bold disabled:opacity-60"
-                style={{ background: 'hsl(159 100% 33%)' }}
-              >
-                {concluding ? 'Finalizando…' : 'Finalizar passeio'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <AlertDialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
-          <AlertDialogContent className="rounded-[24px] max-w-[340px]">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-center">Encerrar passeio?</AlertDialogTitle>
-              <AlertDialogDescription className="text-center">
-                O passeio com {petName} será encerrado agora. Vamos registrar o horário de término e o tempo total no histórico. O valor cobrado será o da duração contratada.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="flex-row gap-2">
-              <AlertDialogCancel className="flex-1 rounded-xl m-0">Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => { e.preventDefault(); if (!concluding) handleRequestReturn(); }}
-                disabled={concluding}
-                className="flex-1 rounded-xl m-0 text-white"
-                style={{ background: 'hsl(159 100% 33%)' }}
-              >
-                {concluding ? 'Encerrando…' : 'Encerrar agora'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
 
         {/* Dialogo de cancelamento — disparado pelo botão Voltar durante o
             passeio. Confirmar dispara a animação de retorno do pet para casa
             e só então o passeio é efetivamente cancelado. */}
-        <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-          <AlertDialogContent className="rounded-[24px] max-w-[340px]">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-center">Cancelar passeio?</AlertDialogTitle>
-              <AlertDialogDescription className="text-center">
-                Se você cancelar, {walkerName} trará {petName} de volta para casa agora.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="flex-col gap-2 sm:space-x-0">
-              <AlertDialogAction
-                onClick={() => {
-                  setCancelDialogOpen(false);
-                  cancelFiredRef.current = false;
-                  onCancelWalk?.();
-                }}
-                className="w-full rounded-xl m-0 text-white font-bold"
-                style={{ background: '#ef4444' }}
-              >
-                Sim, cancelar agora
-              </AlertDialogAction>
-              <AlertDialogCancel className="w-full rounded-xl m-0 font-medium">
-                Manter passeio
-              </AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
 
         {/* Banner sutil indicando que o cancelamento está em andamento. */}
         {isCancelling && (
@@ -2827,8 +2739,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         <PetwalkerChat
           open={chatOpen}
           onClose={() => setChatOpen(false)}
-          onAuthorizeReturn={() => {
-            onAuthorizeReturn?.();
+          onAuthorizeReturn={async () => {
+            if (!onAuthorizeReturn) return false;
+            return onAuthorizeReturn();
           }}
           petName={petName}
           walkerName={walkerName}
