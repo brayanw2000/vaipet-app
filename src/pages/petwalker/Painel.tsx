@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePetwalkerGps } from '@/hooks/usePetwalkerGps';
 import { supabase } from '@/integrations/supabase/client';
@@ -297,7 +297,7 @@ const Painel = () => {
       if (nextStatus === 'offline') {
         setShowOfferSheet(null);
       }
-      toast.success(nextStatus === 'available' ? 'VocÃª estÃ¡ online' : 'VocÃª estÃ¡ offline');
+      toast.success(nextStatus === 'available' ? 'Você está online' : 'Você está offline');
     }
   };
 
@@ -305,7 +305,7 @@ const Painel = () => {
   const handleAcceptWalk = async () => {
     if (!showOfferSheet || offerAction) return;
     if (!showOfferSheet.session_id) {
-      toast.error('ID da sessÃ£o invÃ¡lido');
+      toast.error('ID da sessão inválido');
       return;
     }
     setOfferAction('accepting');
@@ -319,7 +319,7 @@ const Painel = () => {
         hasOfferRef.current = false;
         setShowOfferSheet(null);
       } else {
-        toast.error('Esta solicitaÃ§Ã£o nÃ£o estÃ¡ mais disponÃ­vel');
+        toast.error('Esta solicitação não está mais disponível');
         hasOfferRef.current = false;
         setShowOfferSheet(null);
         await refreshAvailableOffer();
@@ -334,7 +334,7 @@ const Painel = () => {
   const handleDeclineWalk = async () => {
     if (!showOfferSheet || offerAction) return;
     if (!showOfferSheet.session_id) {
-      toast.error('ID da sessÃ£o invÃ¡lido');
+      toast.error('ID da sessão inválido');
       return;
     }
     setOfferAction('declining');

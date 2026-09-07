@@ -1,9 +1,9 @@
-﻿/**
- * VERIFICAÃ‡ÃƒO VISUAL:
- * - SeÃ§Ã£o "Atividade recente": CabeÃ§alho com fonte Space Grotesk 24px, botÃ£o "Ver tudo" em formato pill BRAND.
- * - Empty State: Card INK sÃ³lido com Ã­cone Activity em BRAND e radius 28px.
- * - Quick Tiles (PetShop/Vet): Radius 28px, sombras suaves, Ã­cones em containers arredondados 20px.
- * - KPIs: DistÃ¢ncia e Tempo removidos da homepage.
+/**
+ * VERIFICAÇÃO VISUAL:
+ * - Seção "Atividade recente": Cabeçalho com fonte Space Grotesk 24px, botão "Ver tudo" em formato pill BRAND.
+ * - Empty State: Card INK sólido com ícone Activity em BRAND e radius 28px.
+ * - Quick Tiles (PetShop/Vet): Radius 28px, sombras suaves, ícones em containers arredondados 20px.
+ * - KPIs: Distância e Tempo removidos da homepage.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -55,7 +55,7 @@ const itemVariants = {
 };
 
 
-// Editorial palette â€” chosen direction (light + dark variants).
+// Editorial palette — chosen direction (light + dark variants).
 const BRAND = '#31D880';
 const BRAND_DEEP = '#1FB368';
 
@@ -94,11 +94,11 @@ const fmtDate = (iso: string) => {
   const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (diff === 0) return 'hoje';
   if (diff === 1) return 'ontem';
-  if (diff < 7) return `hÃ¡ ${diff}d`;
+  if (diff < 7) return `há ${diff}d`;
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 };
 
-// Map Open-Meteo WMO weather codes â†’ icon + walk-friendly label (pt-BR).
+// Map Open-Meteo WMO weather codes → icon + walk-friendly label (pt-BR).
 const describeWeather = (code: number, isDay: boolean) => {
   if (code === 0)
     return {
@@ -108,16 +108,16 @@ const describeWeather = (code: number, isDay: boolean) => {
   if ([1, 2].includes(code))
     return { Icon: CloudSun, label: 'Parcialmente nublado' };
   if (code === 3) return { Icon: Cloud, label: 'Tempo nublado' };
-  if ([45, 48].includes(code)) return { Icon: CloudFog, label: 'Neblina lÃ¡ fora' };
+  if ([45, 48].includes(code)) return { Icon: CloudFog, label: 'Neblina lá fora' };
   if ([51, 53, 55, 56, 57].includes(code))
     return { Icon: CloudRain, label: 'Garoa fina' };
   if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code))
-    return { Icon: CloudRain, label: 'Chuva â€” leve o capuz' };
+    return { Icon: CloudRain, label: 'Chuva — leve o capuz' };
   if ([71, 73, 75, 77, 85, 86].includes(code))
-    return { Icon: CloudSnow, label: 'Neve por aÃ­' };
+    return { Icon: CloudSnow, label: 'Neve por aí' };
   if ([95, 96, 99].includes(code))
-    return { Icon: CloudLightning, label: 'Tempestade â€” adie o passeio' };
-  return { Icon: Cloud, label: 'Tempo estÃ¡vel' };
+    return { Icon: CloudLightning, label: 'Tempestade — adie o passeio' };
+  return { Icon: Cloud, label: 'Tempo estável' };
 };
 
 export const HomePasseio: React.FC = () => {
@@ -191,7 +191,7 @@ export const HomePasseio: React.FC = () => {
         ),
         km: ws.reduce((a, w) => a + (Number(w.distance_km) || 0), 0),
       });
-      // Weekly goal: count walks since Monday 00:00 (local) â€” resets every Monday.
+      // Weekly goal: count walks since Monday 00:00 (local) — resets every Monday.
       const now = new Date();
       const dow = (now.getDay() + 6) % 7; // Mon=0..Sun=6
       const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow).getTime();
@@ -325,7 +325,7 @@ export const HomePasseio: React.FC = () => {
         setLoc({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
-          name: 'Minha localizaÃ§Ã£o',
+          name: 'Minha localização',
           address: null,
           city: null,
         });
@@ -553,7 +553,7 @@ export const HomePasseio: React.FC = () => {
             {(() => {
               const w = weather
                 ? describeWeather(weather.code, weather.isDay)
-                : { Icon: Cloud, label: 'Carregando climaâ€¦' };
+                : { Icon: Cloud, label: 'Carregando clima…' };
               const WIcon = w.Icon;
               return (
                 <span
@@ -563,7 +563,7 @@ export const HomePasseio: React.FC = () => {
                     neighborhood ||
                     loc?.name ||
                     loc?.city ||
-                    'Sua localizaÃ§Ã£o'
+                    'Sua localização'
                   }
                 >
                   <span
@@ -585,7 +585,7 @@ export const HomePasseio: React.FC = () => {
                         lineHeight: 1,
                       }}
                     >
-                      {weather ? `${weather.temp}Â°` : 'â€”'}
+                      {weather ? `${weather.temp}°` : '—'}
                     </span>
                     <span
                       className="text-[10px] font-bold uppercase tracking-[0.18em] truncate"
@@ -624,7 +624,7 @@ export const HomePasseio: React.FC = () => {
                 className="mb-2 text-[10px] font-bold uppercase tracking-[0.28em]"
                 style={{ color: PAPER, opacity: 0.85 }}
               >
-                LocalizaÃ§Ã£o desativada
+                Localização desativada
               </p>
               <button
                 onClick={requestLocation}
@@ -642,10 +642,10 @@ export const HomePasseio: React.FC = () => {
               >
                 <MapPin className="w-4 h-4" strokeWidth={2.6} />
                 {locRequesting
-                  ? 'Buscandoâ€¦'
+                  ? 'Buscando…'
                   : locDenied
-                  ? 'Permitir nas configuraÃ§Ãµes'
-                  : 'Ativar localizaÃ§Ã£o'}
+                  ? 'Permitir nas configurações'
+                  : 'Ativar localização'}
               </button>
             </div>
           )}
@@ -709,7 +709,7 @@ export const HomePasseio: React.FC = () => {
 
           return (
             <section className="space-y-2.5">
-              {/* Weekly goal â€” full-width editorial card */}
+              {/* Weekly goal — full-width editorial card */}
               <div
                 className="relative overflow-hidden pt-2 pb-5"
                 style={{
@@ -748,9 +748,9 @@ export const HomePasseio: React.FC = () => {
                       style={{ opacity: 0.72, maxWidth: 180 }}
                     >
                       {complete
-                        ? 'Meta concluÃ­da â€” boa, vocÃªs dois.'
+                        ? 'Meta concluída — boa, vocês dois.'
                         : remaining === 1
-                        ? 'SÃ³ mais 1 para fechar a semana.'
+                        ? 'Só mais 1 para fechar a semana.'
                         : `Faltam ${remaining} passeios essa semana.`}
                     </p>
                   </div>
@@ -881,7 +881,7 @@ export const HomePasseio: React.FC = () => {
                     >
                       <Activity className="w-6 h-6" strokeWidth={1.5} />
                     </div>
-                    <span className="text-[11px] font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>HistÃ³rico</span>
+                    <span className="text-[11px] font-bold" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>Histórico</span>
                   </button>
                   
                   <button 
@@ -1182,11 +1182,11 @@ const LocationBlockedModal: React.FC<{
             className="text-2xl font-bold mb-3"
             style={{ fontFamily: 'Space Grotesk, sans-serif', letterSpacing: '-0.02em' }}
           >
-            LocalizaÃ§Ã£o bloqueada
+            Localização bloqueada
           </h3>
           
           <p className="text-[14px] leading-relaxed mb-8" style={{ opacity: 0.7 }}>
-            Para usar o VaiPet, vocÃª precisa autorizar o acesso Ã  sua localizaÃ§Ã£o. Isso nos permite encontrar os melhores walkers e garantir a seguranÃ§a do seu pet.
+            Para usar o VaiPet, você precisa autorizar o acesso à sua localização. Isso nos permite encontrar os melhores walkers e garantir a segurança do seu pet.
           </p>
           
           <div className="space-y-3">
@@ -1199,7 +1199,7 @@ const LocationBlockedModal: React.FC<{
               Tentar novamente
             </button>
             <p className="text-[11px] font-medium" style={{ opacity: 0.5 }}>
-              Verifique as permissÃµes de site do seu navegador.
+              Verifique as permissões de site do seu navegador.
             </p>
           </div>
         </div>

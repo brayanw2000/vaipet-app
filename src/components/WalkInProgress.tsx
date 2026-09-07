@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { ArrowLeft, MessageCircle, Camera, RotateCcw, CheckCircle, Phone, Shield, Clock, Route, PawPrint, Navigation, KeyRound, Gauge, Sun, Moon, X, ChevronDown } from 'lucide-react';
@@ -21,9 +21,9 @@ interface WalkInProgressProps {
   onAuthorizeReturn?: () => void;
   /** Disparado quando o cliente confirma o cancelamento do passeio em andamento. */
   onCancelWalk?: () => void;
-  /** Disparado quando o pet chega em casa apÃ³s um cancelamento. */
+  /** Disparado quando o pet chega em casa após um cancelamento. */
   onCancelComplete?: () => void;
-  /** Quando true, o retorno em andamento Ã© uma animaÃ§Ã£o de cancelamento. */
+  /** Quando true, o retorno em andamento é uma animação de cancelamento. */
   isCancelling?: boolean;
   petNames?: string[];
   petIds?: string[];
@@ -36,9 +36,9 @@ interface WalkInProgressProps {
   walkerLocation: [number, number] | null;
   petLocation?: [number, number] | null;
   /**
-   * PosiÃ§Ã£o atual REAL do PetWalker, vinda exclusivamente da RPC segura
-   * `get_active_walker_location`. Fonte canÃ´nica da posiÃ§Ã£o corrente â€”
-   * `route_coordinates` serve apenas para o rastro histÃ³rico.
+   * Posição atual REAL do PetWalker, vinda exclusivamente da RPC segura
+   * `get_active_walker_location`. Fonte canônica da posição corrente —
+   * `route_coordinates` serve apenas para o rastro histórico.
    */
   livePosition?: { lng: number; lat: number; ts: number } | null;
   pickupRoute?: [number, number][];
@@ -53,13 +53,13 @@ interface WalkInProgressProps {
   walkerCode?: string;
   onToggleTheme?: () => void;
   /**
-   * 'livre' = walker decides everything â†’ NO planned dashed route on the ground.
-   * 'local' = user-defined stops â†’ show dashed planned route ahead of the dog.
+   * 'livre' = walker decides everything → NO planned dashed route on the ground.
+   * 'local' = user-defined stops → show dashed planned route ahead of the dog.
    */
   walkType?: 'livre' | 'local';
   /**
    * Local walk stops (in order). Required for walkType === 'local'. The walking
-   * route becomes: home â†’ stop1 â†’ â€¦ â†’ stopN â†’ home with outbound vs return legs
+   * route becomes: home → stop1 → … → stopN → home with outbound vs return legs
    * rendered as distinct dashed lines and a numbered pin at each stop.
    */
   localStops?: Array<{ lng: number; lat: number; label?: string }>;
@@ -67,7 +67,7 @@ interface WalkInProgressProps {
 
 // Defensive ordering: trust an explicit `order` field if present, otherwise
 // fall back to the array order. Always renumber sequentially 1..N so the pin
-// labels can NEVER be out of sync with the IDA â†’ VOLTA flow.
+// labels can NEVER be out of sync with the IDA → VOLTA flow.
 type StopLike = { lng: number; lat: number; label?: string; order?: number };
 const orderStops = (stops: StopLike[]): Array<StopLike & { order: number }> => {
   const sorted = [...stops].sort((a, b) => {
@@ -98,7 +98,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   );
   const [resolvedHome, setResolvedHome] = useState<[number, number] | null>(petLocation || walkerLocation);
   useEffect(() => {
-    // Always defer to the latest prop if it has data â€” keeps the parent the
+    // Always defer to the latest prop if it has data — keeps the parent the
     // source of truth during the same session.
     if (localStops.length > 0) {
       setResolvedStops(orderStops(localStops));
@@ -140,7 +140,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     buildLocalRoute(home, resolvedStops).then(({ outbound, back }) => {
       plannedOutboundRef.current = outbound;
       plannedBackRef.current = back;
-      // Only swap the animation route while the dog is actually walking â€”
+      // Only swap the animation route while the dog is actually walking —
       // we don't want to interrupt the pickup animation.
       if (phaseRef.current === 'walking') {
         fillLocalRouteToDuration(outbound, back, walkDurationMinutes).then(({ wander }) => {
@@ -178,9 +178,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const [currentRouteIndex, setCurrentRouteIndex] = useState(0);
   const [distanceWalked, setDistanceWalked] = useState(0);
   const [panelExpanded, setPanelExpanded] = useState(true);
-  // Pop-up de chat com o PetWalker (substitui o antigo botÃ£o "Encerrar").
+  // Pop-up de chat com o PetWalker (substitui o antigo botão "Encerrar").
   const [chatOpen, setChatOpen] = useState(false);
-  // Pop-up de suporte ao vivo VaiPet (acionado pelo botÃ£o "Precisa de ajuda?").
+  // Pop-up de suporte ao vivo VaiPet (acionado pelo botão "Precisa de ajuda?").
   const [supportOpen, setSupportOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const cancelFiredRef = useRef(false);
@@ -205,7 +205,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const stopMarkersRef = useRef<mapboxgl.Marker[]>([]);
   // Persisted breadcrumb of every position the pet has actually been at.
   // Seeded from DB on mount so reopening the screen NEVER loses the trail.
-  // Appended (not replaced) during the entire walk â€” including the return.
+  // Appended (not replaced) during the entire walk — including the return.
   const persistedTrailRef = useRef<[number, number][]>([]);
   const lastTrailAppendRef = useRef<[number, number] | null>(null);
   const lastTrailSaveAtRef = useRef<number>(0);
@@ -283,7 +283,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   //
   // IMPORTANT: when the user reopens a walk that was already in progress
   // we seed `persistedTrailRef` from the DB. The walking simulation, however,
-  // always restarts from the beginning of the planned route â€” so the first
+  // always restarts from the beginning of the planned route — so the first
   // ticks would create a HUGE jump from the last real position to the
   // planned route's start, drawing bogus segments across the city.
   //
@@ -345,7 +345,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   // Fetch real walking directions between two points.
   // IMPORTANT: on failure we return an EMPTY array (not [a,b]) so the caller
   // can skip the broken segment instead of drawing a straight line that cuts
-  // across blocks, buildings or water â€” that was the "pet vai pro meio do
+  // across blocks, buildings or water — that was the "pet vai pro meio do
   // nada" bug.
   const fetchWalkingRoute = async (a: [number, number], b: [number, number]): Promise<[number, number][]> => {
     try {
@@ -358,7 +358,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
 
   // Fetch a real walking route across MANY waypoints in a single Mapbox
   // Directions request. This keeps the path coherent and snapped to actual
-  // streets â€” much better than chaining N independent Aâ†’B requests, which
+  // streets — much better than chaining N independent A→B requests, which
   // can produce weird detours when intermediate points fall off-road.
   const fetchWalkingRouteMulti = async (points: [number, number][]): Promise<[number, number][]> => {
     if (points.length < 2) return points.slice();
@@ -406,7 +406,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     const rMeters = 250;
     const dLat = rMeters / 111320;
     const dLng = rMeters / (111320 * Math.cos((start[1] * Math.PI) / 180));
-    // Heading: continue forward with a gentle Â±45Â° wiggle so the dog
+    // Heading: continue forward with a gentle ±45° wiggle so the dog
     // doesn't U-turn. First segment is fully random.
     const baseHeading = lastLivreHeadingRef.current ?? Math.random() * Math.PI * 2;
     const heading = baseHeading + (Math.random() - 0.5) * (Math.PI / 2);
@@ -430,7 +430,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       lastLivreHeadingRef.current = heading;
       return full;
     }
-    // Retry: just Aâ†’B, accept a shorter route if available.
+    // Retry: just A→B, accept a shorter route if available.
     const retry = await fetchWalkingRouteMulti([start, end]);
     if (retry.length >= 2) {
       lastLivreHeadingRef.current = heading;
@@ -439,8 +439,8 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     return [start];
   };
 
-  // Build a real two-leg route for LOCAL walks: home â†’ stops (outbound)
-  // and last stop â†’ home (return). Both legs are routed on real walking
+  // Build a real two-leg route for LOCAL walks: home → stops (outbound)
+  // and last stop → home (return). Both legs are routed on real walking
   // roads via Mapbox Directions.
   const buildLocalRoute = async (
     home: [number, number],
@@ -450,7 +450,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     const points: [number, number][] = [home, ...stops.map(s => [s.lng, s.lat] as [number, number])];
     // Single multi-waypoint request keeps every leg snapped to roads with a
     // consistent network plan (avoids the "detour through nowhere" effect
-    // we got from chaining independent Aâ†’B requests).
+    // we got from chaining independent A→B requests).
     const outboundMulti = await fetchWalkingRouteMulti(points);
     const outbound: [number, number][] = outboundMulti.length >= 2
       ? outboundMulti
@@ -473,7 +473,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   // Build a wandering loop AROUND a stop that the dog can roam through to
   // fill the planned walk duration. Without this, short LOCAL routes (e.g.
   // a stop 50m from home) finish in ~2min and the pet sits idle at home
-  // for the rest of the planned 30min â€” which the user perceived as
+  // for the rest of the planned 30min — which the user perceived as
   // "saiu uns 50m, voltou e parou". The loop generates random waypoints
   // within `radiusMeters` of `around`, routes them on real streets, and
   // keeps appending until `targetMeters` of extra path are accumulated.
@@ -557,14 +557,14 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   const dashAnimRef = useRef<number | null>(null);
   const dashAnimStartRef = useRef<number>(0);
   // Refs sincronizados com o progresso real do passeio. Usados dentro do
-  // RAF de animaÃ§Ã£o do tracejado para mapear a posiÃ§Ã£o da onda luminosa
-  // ao quanto do passeio jÃ¡ se passou (0 no inÃ­cio, 1 no fim).
+  // RAF de animação do tracejado para mapear a posição da onda luminosa
+  // ao quanto do passeio já se passou (0 no início, 1 no fim).
   const walkStartedAtAnimRef = useRef<Date | null>(null);
   const walkTotalSecAnimRef = useRef<number>(0);
 
   const drawPlannedLocalLayers = () => {
     if (!map.current) return;
-    // Don't add empty/placeholder sources â€” wait until the planned legs
+    // Don't add empty/placeholder sources — wait until the planned legs
     // are actually computed. Empty sources render nothing AND prevent the
     // subsequent (real) draw from re-adding the source because the
     // `getSource()` check returns true. This was the main cause of the
@@ -576,7 +576,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       return;
     }
     if (!map.current.isStyleLoaded()) {
-      // Style not ready yet â€” retry once it is. This prevents the
+      // Style not ready yet — retry once it is. This prevents the
       // planned route from being silently dropped when the user confirms
       // the pickup code right before a style swap finishes.
       map.current.once('idle', () => drawPlannedLocalLayers());
@@ -591,7 +591,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       type: 'Feature', properties: {},
       geometry: { type: 'LineString', coordinates: plannedBackRef.current },
     };
-    // SUBTLE dotted preview line â€” no glow, no thick base, just a thin
+    // SUBTLE dotted preview line — no glow, no thick base, just a thin
     // dotted overlay that flows forward as a directional cue. As the dog
     // walks the planned source is trimmed (see tick loop) so the dots
     // disappear behind the pet, leaving only the real breadcrumb.
@@ -612,7 +612,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           paint: {
             'line-color': color,
             'line-width': 3,
-            // Discreto: 20% de opacidade. NÃ£o compete com o rastro verde.
+            // Discreto: 20% de opacidade. Não compete com o rastro verde.
             'line-opacity': 0.2,
             // Pontilhado curto, estilo "bolinhas".
             'line-dasharray': [0.6, 4],
@@ -620,9 +620,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           layout: { 'line-join': 'round', 'line-cap': 'round' },
         }, beforeId);
       }
-      // Overlay luminoso animado: uma "onda" linear desliza do inÃ­cio ao
-      // fim da rota indicando a direÃ§Ã£o. line-gradient Ã© atualizado por
-      // frame em startDashPulse() â€” aqui sÃ³ registramos a camada com um
+      // Overlay luminoso animado: uma "onda" linear desliza do início ao
+      // fim da rota indicando a direção. line-gradient é atualizado por
+      // frame em startDashPulse() — aqui só registramos a camada com um
       // gradiente neutro inicial.
       if (!m.getLayer(pulseId)) {
         m.addLayer({
@@ -630,9 +630,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           paint: {
             'line-width': 3,
             'line-opacity': 0.95,
-            // MantÃ©m o visual pontilhado da rota: a onda luminosa tambÃ©m
-            // Ã© desenhada como tracejado curto, sobreposta ao traÃ§o base,
-            // evitando que o pico vire um traÃ§o sÃ³lido brilhante.
+            // Mantém o visual pontilhado da rota: a onda luminosa também
+            // é desenhada como tracejado curto, sobreposta ao traço base,
+            // evitando que o pico vire um traço sólido brilhante.
             'line-dasharray': [0.6, 4],
             'line-gradient': [
               'interpolate', ['linear'], ['line-progress'],
@@ -662,24 +662,24 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     if (dashAnimRef.current != null) return;
     dashAnimStartRef.current = performance.now();
     // Onda luminosa sincronizada com o PROGRESSO REAL do passeio:
-    //   â€¢ Inicia no exato instante em que o passeio comeÃ§a (head=0).
-    //   â€¢ Atravessa a IDA (home â†’ destino) durante a primeira metade
-    //     do tempo planejado, e a VOLTA (destino â†’ home) na segunda.
-    //   â€¢ Termina exatamente quando o tempo planejado se esgota
+    //   • Inicia no exato instante em que o passeio começa (head=0).
+    //   • Atravessa a IDA (home → destino) durante a primeira metade
+    //     do tempo planejado, e a VOLTA (destino → home) na segunda.
+    //   • Termina exatamente quando o tempo planejado se esgota
     //     (head=1 no fim da rota de volta).
-    // Antes do passeio iniciar (fase de pickup), cai num loop curto sÃ³
-    // para sinalizar visualmente que a rota estÃ¡ pronta.
+    // Antes do passeio iniciar (fase de pickup), cai num loop curto só
+    // para sinalizar visualmente que a rota está pronta.
     const WIDTH = 0.18;
     const FALLBACK_S = 2.6; // loop usado enquanto walkStartedAt == null
     const buildPulseGradient = (color: string, head: number) => {
-      // head Ã© a posiÃ§Ã£o (0..1) do PICO de brilho na rota. ConstruÃ­mos
-      // um gradiente: transparente â†’ brilho no pico â†’ transparente,
+      // head é a posição (0..1) do PICO de brilho na rota. Construímos
+      // um gradiente: transparente → brilho no pico → transparente,
       // garantindo sempre stops crescentes em 0..1.
       const c = (a: number) => {
         if (color === '#31D880') return `rgba(49,216,128,${a})`;
         return `rgba(49,216,128,${a})`;
       };
-      // Onda fora do trecho visÃ­vel: gradiente totalmente transparente.
+      // Onda fora do trecho visível: gradiente totalmente transparente.
       if (head <= 0 || head >= 1) {
         return ['interpolate', ['linear'], ['line-progress'], 0, c(0), 1, c(0)] as mapboxgl.Expression;
       }
@@ -705,7 +705,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         return;
       }
       const t = (performance.now() - dashAnimStartRef.current) / 1000;
-      // ---------- CÃ¡lculo do progresso ----------
+      // ---------- Cálculo do progresso ----------
       const startedAt = walkStartedAtAnimRef.current;
       const totalSec = walkTotalSecAnimRef.current;
       let outboundHead: number;
@@ -722,12 +722,12 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           showBack = false;
         } else {
           // Segunda metade: IDA permanece cheia (head=1, fora da faixa
-          // visÃ­vel por ter passado), VOLTA percorre do destino atÃ© home.
-          outboundHead = 1 + WIDTH; // garante onda jÃ¡ fora da rota
-          backHead = (progress - 0.5) * 2; // 0..1 (destino â†’ home)
+          // visível por ter passado), VOLTA percorre do destino até home.
+          outboundHead = 1 + WIDTH; // garante onda já fora da rota
+          backHead = (progress - 0.5) * 2; // 0..1 (destino → home)
         }
       } else {
-        // Antes do passeio iniciar: loop suave do inÃ­cio ao fim das duas pernas
+        // Antes do passeio iniciar: loop suave do início ao fim das duas pernas
         const cyc = (t % FALLBACK_S) / FALLBACK_S;
         const h = -WIDTH + cyc * (1 + 2 * WIDTH);
         outboundHead = Math.max(0, Math.min(1, h));
@@ -738,15 +738,15 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           m.setPaintProperty('planned-outbound-pulse', 'line-gradient', buildPulseGradient('#31D880', outboundHead));
         }
         if (m.getLayer('planned-back-pulse')) {
-          // A geometria da rota de volta Ã© [destino â†’ origem]. Como o
-          // progresso da segunda metade jÃ¡ reflete destinoâ†’home
+          // A geometria da rota de volta é [destino → origem]. Como o
+          // progresso da segunda metade já reflete destino→home
           // diretamente, passamos `backHead` sem inverter. Quando ainda
           // estamos na IDA, escondemos a onda da volta (head<0).
           const h = showBack ? backHead : -WIDTH * 2;
           m.setPaintProperty('planned-back-pulse', 'line-gradient', buildPulseGradient('#31D880', h));
         }
         if (m.getLayer('return-route-dash')) {
-          // legado: mantÃ©m um leve pulsar de dasharray na rota de retorno
+          // legado: mantém um leve pulsar de dasharray na rota de retorno
           const DOT = 1.4, GAP = 2.4, PERIOD = DOT + GAP;
           const phase = (t * 1.8) % PERIOD;
           const lead = Math.max(0.001, PERIOD - phase);
@@ -791,13 +791,13 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     checkpointPosRef.current = home;
     const ensure = () => {
       if (!map.current || !map.current.isStyleLoaded()) return;
-      // SEMPRE recria o layer fresh aqui. A versÃ£o prÃ©-criada e "escondida"
+      // SEMPRE recria o layer fresh aqui. A versão pré-criada e "escondida"
       // no map load funcionava no modo claro mas, no modo escuro, o GLB
-      // carregado async dentro de uma camada inicialmente invisÃ­vel nÃ£o
-      // renderizava na primeira chamada de setVisible(true) â€” sÃ³ apÃ³s
+      // carregado async dentro de uma camada inicialmente invisível não
+      // renderizava na primeira chamada de setVisible(true) — só após
       // uma troca de tema (que recriava a camada do zero). Recriar aqui
-      // garante render imediato em ambos os temas, e Ã© barato porque o
-      // GLB jÃ¡ estÃ¡ em cache (preloadCheckpointAsset).
+      // garante render imediato em ambos os temas, e é barato porque o
+      // GLB já está em cache (preloadCheckpointAsset).
       try { if (map.current.getLayer('vp-checkpoint-3d')) map.current.removeLayer('vp-checkpoint-3d'); } catch { /* ignorado */ }
       const cp = createCheckpoint3DLayer('vp-checkpoint-3d', home, { color: '#31D880', targetSizeMeters: 8, groundOffsetMeters: 0.25 });
       checkpointRef.current = cp;
@@ -867,22 +867,22 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
 
   const drawStopPins = () => {
     const m = map.current;
-    // Guard: o mapa pode existir mas ainda nÃ£o ter terminado de carregar
+    // Guard: o mapa pode existir mas ainda não ter terminado de carregar
     // (getCanvasContainer() retorna undefined nesse caso). Sem isso, o
     // marker.addTo() crashava com "Cannot read properties of undefined
-    // (reading 'appendChild')" quando o effect de mudanÃ§a de fase
+    // (reading 'appendChild')" quando o effect de mudança de fase
     // disparava drawStopPins() antes do 'load'.
     if (!m || typeof m.getCanvasContainer !== 'function' || !m.getCanvasContainer()) return;
     // Clear previous pins
     stopMarkersRef.current.forEach(m => m.remove());
     stopMarkersRef.current = [];
-    // Always render from the canonical `resolvedStops` list â€” its order is
+    // Always render from the canonical `resolvedStops` list — its order is
     // re-numbered 1..N every time it's set, so a stale or shuffled DB row
     // can never produce out-of-sequence pin labels.
     resolvedStops.forEach((s, idx) => {
       const n = s.order ?? idx + 1;
       const el = document.createElement('div');
-      // Circular numbered pin â€” pixel-accurate. `anchor: 'center'` places the
+      // Circular numbered pin — pixel-accurate. `anchor: 'center'` places the
       // exact center of this 34px circle on the stop coordinate so the pin
       // never appears displaced from the address it represents (no rotation
       // hacks that would offset the visual centre from the layout box).
@@ -898,7 +898,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         stopMarkersRef.current.push(marker);
       } catch { /* ignorado */
         // Silencioso: se o mapa for desmontado entre o guard e o addTo
-        // (race em hot-reload), apenas ignora â€” o prÃ³ximo ciclo redesenha.
+        // (race em hot-reload), apenas ignora — o próximo ciclo redesenha.
       }
     });
   };
@@ -913,8 +913,8 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     return () => clearInterval(interval);
   }, [walkStartedAt]);
 
-  // MantÃ©m o RAF de animaÃ§Ã£o do tracejado sincronizado com o passeio:
-  // assim que walkStartedAt vira uma Date real e o tempo planejado Ã©
+  // Mantém o RAF de animação do tracejado sincronizado com o passeio:
+  // assim que walkStartedAt vira uma Date real e o tempo planejado é
   // conhecido, a onda passa a refletir o progresso real (0..1).
   useEffect(() => {
     walkStartedAtAnimRef.current = walkStartedAt;
@@ -988,15 +988,15 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     };
   }, [phase, isReturning]);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Estado/refs do marcador de posiÃ§Ã£o AO VIVO. Declarados ANTES do
-  // efeito do mapa porque a limpeza do mapa precisa soltÃ¡-los, e o
+  // ────────────────────────────────────────────────────────────────
+  // Estado/refs do marcador de posição AO VIVO. Declarados ANTES do
+  // efeito do mapa porque a limpeza do mapa precisa soltá-los, e o
   // marcador precisa ser (re)criado assim que o mapa emitir `load`.
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ────────────────────────────────────────────────────────────────
   const liveMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const liveAnimRef = useRef<number | null>(null);
   const liveLastRef = useRef<{ lng: number; lat: number; ts: number } | null>(null);
-  // Ãšltima coordenada conhecida, guardada mesmo antes de o mapa carregar.
+  // Última coordenada conhecida, guardada mesmo antes de o mapa carregar.
   const pendingLiveRef = useRef<{ lng: number; lat: number; ts: number } | null>(null);
   const [mapReadyTick, setMapReadyTick] = useState(0);
 
@@ -1005,7 +1005,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     // Guard: this effect must initialize the map exactly ONCE. The
     // dependency array intentionally fires whenever `walkerLocation`
     // first becomes available, but the parent can keep updating
-    // walkerLocation during the simulation â€” without this guard every
+    // walkerLocation during the simulation — without this guard every
     // such update would tear down and rebuild the entire map, which is
     // exactly the "screen flashes, route resets, goes back to 'a
     // caminho'" bug the user reported.
@@ -1013,14 +1013,14 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     // Only the run that ACTUALLY created the map is allowed to tear it
     // down. Without this flag every `walkerLocation`/`petLocation` update
     // (e.g. the parent seeding the first live coordinate) ran the cleanup
-    // of the previous run and destroyed the map â€” while the creation guard
+    // of the previous run and destroyed the map — while the creation guard
     // above prevented it from ever being rebuilt. Result: blank map and a
     // live marker detached from the DOM.
     let createdHere = false;
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
     // When the walker is coming to pick up, start the camera around the
     // PET (where the user was looking in the search map) and then smoothly
-    // travel to the walker on load â€” avoids the abrupt "flick" the user
+    // travel to the walker on load — avoids the abrupt "flick" the user
     // saw when the walking screen mounted.
     const startCenter = isComing ? (petLocation || walkerLocation) : (petLocation || walkerLocation);
     map.current = new mapboxgl.Map({
@@ -1062,7 +1062,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           setRouteCoordinates(merged);
         });
         // Defer the actual visual rendering until the pickup code is
-        // confirmed â€” see handleConfirmCode().
+        // confirmed — see handleConfirmCode().
         if (!isComing) drawPlannedLocalLayers();
       });
     } else {
@@ -1213,11 +1213,11 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           petMarkerRef.current?.getElement().style.setProperty('display', 'none');
         }
       });
-      // PrÃ©-cria a camada 3D do checkpoint (PIN GLB) jÃ¡ no carregamento do
+      // Pré-cria a camada 3D do checkpoint (PIN GLB) já no carregamento do
       // mapa, escondida, exatamente como o DOG. Assim, ao iniciar o passeio,
-      // basta `setPosition` + `setVisible(true)` â€” nÃ£o precisamos esperar
+      // basta `setPosition` + `setVisible(true)` — não precisamos esperar
       // `style.load`/`idle` e o pin aparece no mesmo instante do cachorro
-      // (antes, ele sÃ³ renderizava apÃ³s uma troca de tema porque o addLayer
+      // (antes, ele só renderizava após uma troca de tema porque o addLayer
       // acontecia tarde demais no ciclo do Mapbox).
       const shouldShowCheckpoint = phaseRef.current !== 'pickup' && (checkpointPosRef.current || start);
       if (shouldShowCheckpoint && !map.current.getLayer('vp-checkpoint-3d')) {
@@ -1248,7 +1248,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         });
       }
       // If we already have a planned local route (resolved before the map
-      // finished loading), render the dashed legs + numbered stop pins â€”
+      // finished loading), render the dashed legs + numbered stop pins —
       // but ONLY after the pickup code is confirmed. While the walker is
       // a caminho, the map stays clean.
       if (walkType === 'local' && phaseRef.current !== 'pickup') {
@@ -1259,14 +1259,14 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           drawStopPins();
         }
       }
-      // Sinaliza que o mapa estÃ¡ pronto: o efeito do marcador reaplica
-      // imediatamente a Ãºltima coordenada conhecida (se houver), mesmo que
-      // `livePosition` nÃ£o mude de referÃªncia nesse instante.
+      // Sinaliza que o mapa está pronto: o efeito do marcador reaplica
+      // imediatamente a última coordenada conhecida (se houver), mesmo que
+      // `livePosition` não mude de referência nesse instante.
       setMapReadyTick((n) => n + 1);
     });
     createdHere = true;
 
-    // Detect manual user interaction â€” only user-initiated events have
+    // Detect manual user interaction — only user-initiated events have
     // an originalEvent (programmatic easeTo/flyTo don't). Once set, we
     // switch the pickup camera into "follow walker" mode.
     const markOverride = (e: unknown) => {
@@ -1287,26 +1287,26 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       stopMarkersRef.current = [];
       map.current?.remove();
       map.current = null;
-      // The live marker belongs to this map instance â€” drop the reference
+      // The live marker belongs to this map instance — drop the reference
       // so a future instance can recreate it instead of updating a marker
       // that is no longer in the DOM.
       if (liveAnimRef.current) cancelAnimationFrame(liveAnimRef.current);
       liveMarkerRef.current = null;
       setMapReadyTick((n) => n + 1);
     };
-  // Intentionally exclude isDarkMode â€” the theme toggle swaps the style
+  // Intentionally exclude isDarkMode — the theme toggle swaps the style
   // in place (see effect below) WITHOUT remounting the map. Remounting
   // caused a visible flick, camera reframe and route re-animation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walkerLocation, petLocation]);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Marcador da posiÃ§Ã£o ATUAL do PetWalker (fonte canÃ´nica: RPC
+  // ────────────────────────────────────────────────────────────────
+  // Marcador da posição ATUAL do PetWalker (fonte canônica: RPC
   // `get_active_walker_location`, entregue pelo pai em `livePosition`).
-  // Ã‰ um marcador dedicado, sempre visÃ­vel enquanto o passeio estiver
-  // ativo, independente da animaÃ§Ã£o/rastro. Nunca usa coordenada fictÃ­cia:
-  // sem `livePosition` ele simplesmente nÃ£o existe.
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // É um marcador dedicado, sempre visível enquanto o passeio estiver
+  // ativo, independente da animação/rastro. Nunca usa coordenada fictícia:
+  // sem `livePosition` ele simplesmente não existe.
+  // ────────────────────────────────────────────────────────────────
   useEffect(() => {
     // Guarda SEMPRE a coordenada mais recente, mesmo sem mapa pronto.
     if (livePosition) {
@@ -1316,8 +1316,8 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     const pending = pendingLiveRef.current;
     const m = map.current;
     if (!m || !pending) return;
-    // Protege contra resposta fora de ordem: sÃ³ avanÃ§a no tempo. O marcador
-    // pode nÃ£o existir ainda (mapa recriado) â€” nesse caso reaplicamos.
+    // Protege contra resposta fora de ordem: só avança no tempo. O marcador
+    // pode não existir ainda (mapa recriado) — nesse caso reaplicamos.
     if (liveMarkerRef.current && liveLastRef.current && pending.ts < liveLastRef.current.ts) return;
 
     const from: [number, number] | null = liveMarkerRef.current && liveLastRef.current
@@ -1342,7 +1342,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       return;
     }
 
-    // TransiÃ§Ã£o suave entre a posiÃ§Ã£o anterior e a nova.
+    // Transição suave entre a posição anterior e a nova.
     if (liveAnimRef.current) cancelAnimationFrame(liveAnimRef.current);
     if (!from) {
       liveMarkerRef.current.setLngLat(to);
@@ -1361,16 +1361,16 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     liveAnimRef.current = requestAnimationFrame(step);
   }, [livePosition, mapReadyTick]);
 
-  // Limpeza: timer/animaÃ§Ã£o e marcador saem juntos com o componente.
+  // Limpeza: timer/animação e marcador saem juntos com o componente.
   useEffect(() => () => {
     if (liveAnimRef.current) cancelAnimationFrame(liveAnimRef.current);
     liveMarkerRef.current?.remove();
     liveMarkerRef.current = null;
   }, []);
 
-  // Rastro histÃ³rico: re-hidrata `route_coordinates` (pontos realmente
-  // persistidos pelo servidor) enquanto hÃ¡ posiÃ§Ã£o ao vivo, mantendo o
-  // formato [lng, lat] sem transformaÃ§Ã£o.
+  // Rastro histórico: re-hidrata `route_coordinates` (pontos realmente
+  // persistidos pelo servidor) enquanto há posição ao vivo, mantendo o
+  // formato [lng, lat] sem transformação.
   useEffect(() => {
     if (!sessionId || !livePosition) return;
     let active = true;
@@ -1494,9 +1494,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           });
         }
         // Re-add planned local LEGS after a style swap (GL layers don't
-        // survive setStyle). Stop pins are DOM markers and DO survive â€” no
+        // survive setStyle). Stop pins are DOM markers and DO survive — no
         // need to redraw them, which would also briefly flicker. Skip
-        // entirely during the pickup phase â€” the map must stay clean while
+        // entirely during the pickup phase — the map must stay clean while
         // the walker is on the way.
         if (walkType === 'local' && phaseRef.current !== 'pickup') {
           drawPlannedLocalLayers();
@@ -1724,7 +1724,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         ? [startFrom, ...baseRoute]
         : baseRoute;
     // Where the planned outbound leg ends within `route`. This lets the
-    // tick loop trim the dashed planned route as the dog walks forward â€”
+    // tick loop trim the dashed planned route as the dog walks forward —
     // the planned line "consumes" itself, leaving only the real trail
     // behind the pet.
     const prependedOffset = route.length > baseRoute.length ? 1 : 0;
@@ -1739,21 +1739,21 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     }
     const totalDist = seg[seg.length - 1] || 1;
     // Base speed (m/s):
-    //  - pickup â†’ transport speed (driver/biker/walker on the way)
-    //  - walking â†’ ~1.1 m/s, MAS escalada para preencher a duraÃ§Ã£o planejada
+    //  - pickup → transport speed (driver/biker/walker on the way)
+    //  - walking → ~1.1 m/s, MAS escalada para preencher a duração planejada
     //    do passeio. Sem isso, rotas curtas (ex.: 600m de ida+volta) terminam
-    //    em ~9min num passeio de 30min â€” o cachorro chegava em casa e ficava
-    //    parado, o que o usuÃ¡rio interpretava como "voltou tudo". Agora a
-    //    simulaÃ§Ã£o respeita o tempo escolhido: o pet anda devagar quando a
-    //    rota Ã© curta e mais rÃ¡pido quando a rota Ã© longa.
+    //    em ~9min num passeio de 30min — o cachorro chegava em casa e ficava
+    //    parado, o que o usuário interpretava como "voltou tudo". Agora a
+    //    simulação respeita o tempo escolhido: o pet anda devagar quando a
+    //    rota é curta e mais rápido quando a rota é longa.
     let baseSpeed = phase === 'pickup' ? pickupSpeedMs : 1.1;
     if (phase !== 'pickup' && !isReturning && walkDurationMinutes > 0) {
-      // Reserva 1min do final para o usuÃ¡rio/PetWalker confirmar o retorno
+      // Reserva 1min do final para o usuário/PetWalker confirmar o retorno
       // sem que o cachorro fique parado em casa.
       const targetSec = Math.max(60, walkDurationMinutes * 60 - 60);
       const desired = totalDist / targetSec;
-      // MÃ­nimo de 0.35 m/s (1.26 km/h, ritmo bem lento mas ainda visÃ­vel).
-      // MÃ¡ximo: a velocidade padrÃ£o (1.1 m/s) â€” nunca acelera alÃ©m disso.
+      // Mínimo de 0.35 m/s (1.26 km/h, ritmo bem lento mas ainda visível).
+      // Máximo: a velocidade padrão (1.1 m/s) — nunca acelera além disso.
       baseSpeed = Math.min(baseSpeed, Math.max(0.35, desired));
     }
 
@@ -1790,7 +1790,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       const angIn = turnAngleAt(i - 1);
       const angOut = turnAngleAt(i);
       const ang = Math.max(angIn, angOut);
-      // turnFactor: 1 when perfectly straight, ~0 at ~60Â°+ turn
+      // turnFactor: 1 when perfectly straight, ~0 at ~60°+ turn
       const turnFactor = Math.max(0, 1 - ang / (Math.PI / 3));
       // lengthFactor: 0 for tiny segments, 1 for 80m+ (enough to gain speed)
       const segLen = seg[i] - seg[i - 1];
@@ -1896,7 +1896,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
             type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] }
           });
         }
-        // Hide the two avatars during the walk â€” use a single interactive 3D-style dog
+        // Hide the two avatars during the walk — use a single interactive 3D-style dog
         const wEl2 = walkerMarkerRef.current?.getElement();
         const pEl2 = petMarkerRef.current?.getElement();
         if (wEl2 && wEl2.style.display !== 'none') wEl2.style.display = 'none';
@@ -1906,15 +1906,15 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           layer.setVisible(true);
           layer.setPosition(loc);
         });
-        // Bearing from the actual path geometry â€” independent of frame deltas.
-        // We blend the CURRENT segment direction (aâ†’b) with the NEXT segment
-        // direction (bâ†’route[i+1]), starting the turn slightly before the
+        // Bearing from the actual path geometry — independent of frame deltas.
+        // We blend the CURRENT segment direction (a→b) with the NEXT segment
+        // direction (b→route[i+1]), starting the turn slightly before the
         // vertex so the dog rotates into the curve like a real walker.
         // Both vectors are NORMALIZED first so segment length differences
         // don't bias the blend (sharp short turns stay aligned).
         // IMPORTANT: bearing must be computed in METERS (east/north), not in
-        // raw lng/lat differences. At our latitudes 1Â° of longitude is ~30%
-        // shorter than 1Â° of latitude, so atan2(dLng, dLat) gave a skewed
+        // raw lng/lat differences. At our latitudes 1° of longitude is ~30%
+        // shorter than 1° of latitude, so atan2(dLng, dLat) gave a skewed
         // heading and the dog looked "torto" / "girando" relative to the
         // street it was walking on. Convert each delta to meters first.
         const latCos = Math.cos((b[1] * Math.PI) / 180);
@@ -1934,7 +1934,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         const [ndx, ndy] = next ? norm(bnM[0], bnM[1]) : [cdx, cdy];
         // Start the look-ahead blend very close to the vertex so the dog
         // stays aligned with the current street and only rotates AT the
-        // corner â€” instead of looking "torto" / diagonal half a block
+        // corner — instead of looking "torto" / diagonal half a block
         // before reaching it.
         const turnStart = 0.94;
         const t = sp <= turnStart ? 0 : (sp - turnStart) / (1 - turnStart);
@@ -1960,7 +1960,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           });
         }
         // Trim the planned (dashed) route so it starts at the dog's
-        // current position â€” as the pet walks, the planned line ahead
+        // current position — as the pet walks, the planned line ahead
         // shrinks and the breadcrumb behind grows. Throttled to ~5fps.
         if (walkType === 'local' && !isReturning && map.current && t - lastPlannedUpdate > 200) {
           lastPlannedUpdate = t;
@@ -1975,7 +1975,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
             }
             // Back leg stays as-is until the dog reaches it.
           } else if (plannedBackRef.current.length >= 2) {
-            // Past outbound â€” clear it, trim back.
+            // Past outbound — clear it, trim back.
             if (obSrc) obSrc.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } });
             const bkIdx = Math.max(0, i - outboundEndIdx);
             const remainingBk: [number, number][] = [loc, ...plannedBackRef.current.slice(bkIdx + 1)];
@@ -2011,7 +2011,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           });
         }
       }
-      // Smooth camera follow â€” easeTo throttled to avoid jitter.
+      // Smooth camera follow — easeTo throttled to avoid jitter.
       // Pickup uses a SLOW cadence (2s) + long ease so the framing of
       // walker+pet stays calm. During the walking phase we use a 1.1s
       // cadence with a 1s ease so the next easeTo never interrupts the
@@ -2044,7 +2044,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           }
         } else if (phase !== 'pickup' && idleEnough && cameraAvailable) {
           // Skip if the dog barely moved and the path bearing didn't change
-          // meaningfully â€” re-applying the same easeTo each tick was the
+          // meaningfully — re-applying the same easeTo each tick was the
           // root cause of the visible camera "reset" the user reported.
           const moved = lastCamCenter ? haversine(lastCamCenter, loc) : Infinity;
           const currentBearing = map.current.getBearing();
@@ -2082,11 +2082,11 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       } else {
         const endLoc = route[route.length - 1];
         if (phase === 'pickup') {
-          // Walker has arrived at the pet â€” pause for code confirmation
+          // Walker has arrived at the pet — pause for code confirmation
           setEtaSec(0);
           setPhase('arrived');
         } else if (isReturning) {
-          // Reached home on the return leg â€” stay put and wait for the
+          // Reached home on the return leg — stay put and wait for the
           // user to tap "Confirmar chegada".
           setEtaSec(0);
           setRemainingMeters(0);
@@ -2098,7 +2098,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           }
         } else {
           // LIVRE mode keeps exploring; LOCAL mode stays put at home
-          // after completing the planned outbound + return â€” otherwise
+          // after completing the planned outbound + return — otherwise
           // the dog would start a random exploration loop and look like
           // it's "indo e voltando" randomly after finishing the plan.
           if (walkType === 'local') {
@@ -2156,7 +2156,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     // Add the 3D dog + checkpoint and the planned route AS SOON AS the
     // map is ready. If the style isn't fully loaded yet (or a theme swap
     // is in flight), retry on `style.load`/`idle` instead of silently
-    // skipping â€” that was why occasionally nothing rendered after the
+    // skipping — that was why occasionally nothing rendered after the
     // PIN was confirmed.
     const whenReady = (fn: () => void) => {
       const m = map.current;
@@ -2189,13 +2189,13 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         dog3dRefs.current[id]?.setPosition(start);
         dog3dRefs.current[id]?.setVisible(true);
       });
-      // Use o mesmo caminho que a recuperaÃ§Ã£o de troca de tema
-      // (drawHomeCheckpoint) â€” opÃ§Ãµes idÃªnticas, listeners de
+      // Use o mesmo caminho que a recuperação de troca de tema
+      // (drawHomeCheckpoint) — opções idênticas, listeners de
       // style.load/idle e triggerRepaint garantem que o pin
-      // apareÃ§a jÃ¡ no primeiro frame, sem precisar trocar tema.
+      // apareça já no primeiro frame, sem precisar trocar tema.
       drawHomeCheckpoint(start);
       // Force a repaint so the custom WebGL layer renders its first frame
-      // immediately â€” otherwise Mapbox sometimes waits for the next style
+      // immediately — otherwise Mapbox sometimes waits for the next style
       // event (which is why the pin only appeared after toggling theme).
       try { m.triggerRepaint(); } catch { /* ignorado */ }
       try { m.moveLayer('vp-checkpoint-3d'); } catch { /* ignorado */ }
@@ -2227,7 +2227,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       const stopCoords = resolvedStops.map(s => [s.lng, s.lat] as [number, number]);
       const lastStop = stopCoords[stopCoords.length - 1];
       // Seed planned refs with straight lines so the dotted preview shows
-      // immediately, but DON'T set routeCoordinates yet â€” wait for the
+      // immediately, but DON'T set routeCoordinates yet — wait for the
       // real walking route below so the dog walks streets, not buildings,
       // and the animation only starts once (no restart = no spinning).
       plannedOutboundRef.current = [start, ...stopCoords];
@@ -2279,14 +2279,14 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   // overwrote a longer trail with a shorter one, which caused the
   // "rastro zerou" bug after reopening a long-running walk.
 
-  // Encerramento do passeio â€” UMA Ãºnica transaÃ§Ã£o no banco:
-  //   â€¢ status = 'completed'
-  //   â€¢ end_time = now()
-  //   â€¢ actual_duration_minutes = elapsed/60 (mÃ­nimo 1 para evitar 0 min)
-  //   â€¢ distance_km preservado (o tracking jÃ¡ vinha gravando)
-  // Antes faziamos dois updates (returning â†’ completed) o que deixava o
-  // banco inconsistente se o segundo update falhasse. Agora Ã© atÃ´mico e
-  // o componente pai apenas troca a tela para a avaliaÃ§Ã£o.
+  // Encerramento do passeio — UMA única transação no banco:
+  //   • status = 'completed'
+  //   • end_time = now()
+  //   • actual_duration_minutes = elapsed/60 (mínimo 1 para evitar 0 min)
+  //   • distance_km preservado (o tracking já vinha gravando)
+  // Antes faziamos dois updates (returning → completed) o que deixava o
+  // banco inconsistente se o segundo update falhasse. Agora é atômico e
+  // o componente pai apenas troca a tela para a avaliação.
   const handleRequestReturn = async () => {
     setShowReturnDialog(false);
     if (!sessionId) {
@@ -2311,7 +2311,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       if (data === true) {
         onRequestReturn();
       } else {
-        alert('Falha ao concluir passeio no servidor. Verifique sua conexÃ£o e tente novamente.');
+        alert('Falha ao concluir passeio no servidor. Verifique sua conexão e tente novamente.');
         setConcluding(false);
       }
     } catch (e) {
@@ -2333,7 +2333,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   // When the user confirms a cancellation, we reuse the existing "return home"
   // animation. The moment the pet reaches home (remainingMeters/eta both zero
   // after the return animation has actually started), we auto-finalize the
-  // cancel â€” no extra tap on "Confirmar chegada" needed.
+  // cancel — no extra tap on "Confirmar chegada" needed.
   useEffect(() => {
     if (!isCancelling || !isReturning) return;
     if (cancelFiredRef.current) return;
@@ -2350,7 +2350,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   }, [isCancelling, isReturning, remainingMeters, etaSec, onCancelComplete]);
 
   // SEM AUTO-ENCERRAMENTO: a chegada ao ponto de origem apenas altera a
-  // interface. A conclusÃ£o do passeio exige clique explÃ­cito e confirmado
+  // interface. A conclusão do passeio exige clique explícito e confirmado
   // do PetWalker (nenhum useEffect chama handleRequestReturn).
   const arrivedAtOrigin =
     isReturning && !isCancelling && phase === 'walking' && remainingMeters <= 8 && etaSec <= 0;
@@ -2457,7 +2457,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           </div>
         </div>
 
-        {/* Bottom fade â€” same soft gradient used in SearchWalk so floating
+        {/* Bottom fade — same soft gradient used in SearchWalk so floating
             controls/pills always sit on a readable backdrop instead of the bare map. */}
         <div
           className="absolute left-0 right-0 bottom-0 z-10 pointer-events-none"
@@ -2469,9 +2469,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           }}
         />
 
-        {/* Floating status pill â€” anchored to the BOTTOM (same language as
+        {/* Floating status pill — anchored to the BOTTOM (same language as
             the search/waiting pills) so the whole flow uses one consistent
-            location. Morphs between pickup â†’ arrived â†’ walking â†’ returning. */}
+            location. Morphs between pickup → arrived → walking → returning. */}
         {(
           <div
             className="absolute left-1/2 z-20 pointer-events-none"
@@ -2492,9 +2492,9 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         : <div className="w-full h-full bg-[#31d880] text-white flex items-center justify-center font-extrabold">{walkerName.charAt(0).toUpperCase()}</div>}
                     </div>
                     <div className="flex flex-col leading-tight pr-1 flex-1">
-                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>ðŸ  Retornando</span>
+                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>🏠 Retornando</span>
                       <span className="text-[15px] font-extrabold tabular-nums whitespace-nowrap" style={{ color: chrome.text }}>
-                        {etaSec > 0 ? `Chega em ${fmtEta(etaSec)}` : 'Quase chegandoâ€¦'}
+                        {etaSec > 0 ? `Chega em ${fmtEta(etaSec)}` : 'Quase chegando…'}
                       </span>
                     </div>
                     <button
@@ -2581,7 +2581,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         onClick={() => setMenuOpen(!menuOpen)}
                         className={`ml-1 pointer-events-auto w-10 h-10 rounded-full text-white flex items-center justify-center active:scale-95 transition-all duration-300 ${menuOpen ? 'rotate-180' : ''}`}
                         style={{ background: '#0B1410', boxShadow: '0 6px 18px rgba(0,0,0,0.25)' }}
-                        aria-label="Mais opÃ§Ãµes"
+                        aria-label="Mais opções"
                       >
                         {menuOpen ? <X className="w-[18px] h-[18px]" /> : <ChevronDown className="w-[18px] h-[18px]" />}
                       </button>
@@ -2603,7 +2603,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         : <div className="w-full h-full bg-[#31d880] text-white flex items-center justify-center font-extrabold">{walkerName.charAt(0).toUpperCase()}</div>}
                     </div>
                     <div className="flex flex-col leading-tight pr-2 flex-1">
-                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>A caminho {transport?.emoji ?? 'ðŸš—'}</span>
+                      <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>A caminho {transport?.emoji ?? '🚗'}</span>
                       <span className="text-[15px] font-extrabold whitespace-nowrap" style={{ color: chrome.text }} data-testid="walk-walker-name">{walkerName}</span>
                       <span className="text-[12px] font-semibold tabular-nums whitespace-nowrap" style={{ color: chrome.muted }}>{fmtEta(etaSec)}</span>
                     </div>
@@ -2664,7 +2664,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         {/* Return leg UI is rendered as a floating pill (above) to match
             the rest of the walk's design language. No bottom panel. */}
 
-        {/* Code confirmation overlay â€” appears when walker arrives to pick up pet */}
+        {/* Code confirmation overlay — appears when walker arrives to pick up pet */}
         {phase === 'arrived' && (
           (() => {
             const surface = isDarkMode ? '#0a0d0c' : '#ffffff';
@@ -2694,7 +2694,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                     </div>
                     <h3 className="text-lg font-extrabold" style={{ color: ink }}>{walkerName} chegou!</h3>
                     <p className="text-sm mt-1 mb-5" style={{ color: inkSoft }}>
-                      PeÃ§a o cÃ³digo de 6 dÃ­gitos que o cliente estÃ¡ visualizando para confirmar a retirada.
+                      Peça o código de 6 dígitos que o cliente está visualizando para confirmar a retirada.
                     </p>
 
                     <div className="flex gap-1.5 mb-3">
@@ -2721,7 +2721,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                         />
                       ))}
                     </div>
-                    {codeError && <p className="text-xs text-red-500 mb-2">CÃ³digo incorreto, tente novamente</p>}
+                    {codeError && <p className="text-xs text-red-500 mb-2">Código incorreto, tente novamente</p>}
 
                     <button
                       onClick={handleConfirmCode}
@@ -2743,14 +2743,14 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
         {arrivedAtOrigin && (
           <div className="absolute left-4 right-4 bottom-6 z-50">
             <div className="rounded-[24px] bg-card shadow-2xl p-4 text-center space-y-3">
-              <p className="text-base font-extrabold text-foreground">VocÃª chegou ao destino</p>
+              <p className="text-base font-extrabold text-foreground">Você chegou ao destino</p>
               <button
                 onClick={() => setShowReturnDialog(true)}
                 disabled={concluding}
                 className="w-full min-h-[44px] rounded-xl text-white font-bold disabled:opacity-60"
                 style={{ background: 'hsl(159 100% 33%)' }}
               >
-                {concluding ? 'Finalizandoâ€¦' : 'Finalizar passeio'}
+                {concluding ? 'Finalizando…' : 'Finalizar passeio'}
               </button>
             </div>
           </div>
@@ -2761,7 +2761,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
             <AlertDialogHeader>
               <AlertDialogTitle className="text-center">Encerrar passeio?</AlertDialogTitle>
               <AlertDialogDescription className="text-center">
-                O passeio com {petName} serÃ¡ encerrado agora. Vamos registrar o horÃ¡rio de tÃ©rmino e o tempo total no histÃ³rico. O valor cobrado serÃ¡ o da duraÃ§Ã£o contratada.
+                O passeio com {petName} será encerrado agora. Vamos registrar o horário de término e o tempo total no histórico. O valor cobrado será o da duração contratada.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-row gap-2">
@@ -2772,21 +2772,21 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
                 className="flex-1 rounded-xl m-0 text-white"
                 style={{ background: 'hsl(159 100% 33%)' }}
               >
-                {concluding ? 'Encerrandoâ€¦' : 'Encerrar agora'}
+                {concluding ? 'Encerrando…' : 'Encerrar agora'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Dialogo de cancelamento â€” disparado pelo botÃ£o Voltar durante o
-            passeio. Confirmar dispara a animaÃ§Ã£o de retorno do pet para casa
-            e sÃ³ entÃ£o o passeio Ã© efetivamente cancelado. */}
+        {/* Dialogo de cancelamento — disparado pelo botão Voltar durante o
+            passeio. Confirmar dispara a animação de retorno do pet para casa
+            e só então o passeio é efetivamente cancelado. */}
         <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
           <AlertDialogContent className="rounded-[24px] max-w-[340px]">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-center">Cancelar passeio?</AlertDialogTitle>
               <AlertDialogDescription className="text-center">
-                Se vocÃª cancelar, {walkerName} trarÃ¡ {petName} de volta para casa agora.
+                Se você cancelar, {walkerName} trará {petName} de volta para casa agora.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col gap-2 sm:space-x-0">
@@ -2808,7 +2808,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Banner sutil indicando que o cancelamento estÃ¡ em andamento. */}
+        {/* Banner sutil indicando que o cancelamento está em andamento. */}
         {isCancelling && (
           <div
             className="absolute top-[88px] left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full text-xs font-semibold animate-fade-in pointer-events-none"
@@ -2819,7 +2819,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
               color: chrome.text,
             }}
           >
-            Cancelando â€¢ {petName} voltando para casaâ€¦
+            Cancelando • {petName} voltando para casa…
           </div>
         )}
 

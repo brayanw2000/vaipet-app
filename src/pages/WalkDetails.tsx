@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import { hideMapLabels, enrichMap, tintMapInk } from '@/lib/mapStyle';
@@ -16,11 +16,11 @@ import { toast } from 'sonner';
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 const fmtTime = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'â€”';
+  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
 const fmtDate = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'â€”';
+  iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
 const fmtDuration = (m?: number | null) => {
-  if (!m) return 'â€”';
+  if (!m) return '—';
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
   const r = m % 60;
@@ -66,7 +66,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
         window.location.reload();
         return;
       }
-      setPinError('PIN incorreto ou invÃ¡lido.');
+      setPinError('PIN incorreto ou inválido.');
       setPinLoading(false);
     } catch (e) {
       setPinError('Erro ao validar PIN. Tente novamente.');
@@ -91,7 +91,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
         navigate('/petwalker');
         return;
       }
-      setConcludeError('NÃ£o foi possÃ­vel concluir o passeio. Tente novamente.');
+      setConcludeError('Não foi possível concluir o passeio. Tente novamente.');
       setConcluding(false);
     } catch (e) {
       setConcludeError('Erro inesperado ao concluir o passeio. Tente novamente.');
@@ -170,7 +170,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
         startEl.innerHTML = '<div style="width:28px;height:28px;border-radius:50%;background:#31D880;border:4px solid white;box-shadow:0 4px 12px rgba(0,0,0,0.25);"></div>';
         new mapboxgl.Marker(startEl).setLngLat(coords[0]).addTo(m);
         const endEl = document.createElement('div');
-        endEl.innerHTML = '<div style="width:34px;height:34px;border-radius:50%;background:white;border:4px solid #31D880;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.25);font-weight:800;color:#31D880;font-size:14px;">ðŸ</div>';
+        endEl.innerHTML = '<div style="width:34px;height:34px;border-radius:50%;background:white;border:4px solid #31D880;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.25);font-weight:800;color:#31D880;font-size:14px;">🏁</div>';
         new mapboxgl.Marker(endEl).setLngLat(coords[coords.length - 1]).addTo(m);
         const bounds = coords.reduce((b, c) => b.extend(c as any), new mapboxgl.LngLatBounds(coords[0] as any, coords[0] as any));
         m.fitBounds(bounds, { padding: 60, duration: 1200 });
@@ -190,7 +190,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
   if (!walk) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
-        <p className="text-muted-foreground">Passeio nÃ£o encontrado</p>
+        <p className="text-muted-foreground">Passeio não encontrado</p>
         <button onClick={() => navigate(-1)} className="text-sm font-bold text-accent">Voltar</button>
       </div>
     );
@@ -215,7 +215,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-extrabold text-foreground truncate">Detalhes do passeio</h1>
           <p className="text-xs text-muted-foreground font-medium truncate">
-            {walk.pets?.name || 'Pet'} â€¢ {fmtDate(walk.start_time || walk.created_at)}
+            {walk.pets?.name || 'Pet'} • {fmtDate(walk.start_time || walk.created_at)}
           </p>
         </div>
       </div>
@@ -229,12 +229,12 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
               <Route className="w-8 h-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground font-medium">Sem trajeto registrado</p>
-              <p className="text-[11px] text-muted-foreground/60">Este passeio nÃ£o armazenou pontos GPS.</p>
+              <p className="text-[11px] text-muted-foreground/60">Este passeio não armazenou pontos GPS.</p>
             </div>
           )}
           {trailPoints.length >= 2 && (
             <div className="absolute bottom-3 left-3 right-3 rounded-2xl bg-background/85 backdrop-blur px-3 py-2 flex items-center justify-between text-[11px] font-semibold">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-accent/30" /> InÃ­cio</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-accent/30" /> Início</span>
               <span className="text-muted-foreground">{trailPoints.length} pontos</span>
               <span className="flex items-center gap-1.5">Fim <span className="w-2 h-2 rounded-full bg-accent" /></span>
             </div>
@@ -246,29 +246,29 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
       <div className="px-4 mt-4 grid grid-cols-3 gap-2">
         <div className="rounded-2xl border border-border/40 bg-card p-3">
           <Timer className="w-4 h-4 text-accent mb-1" />
-          <p className="text-[10px] text-muted-foreground font-medium">DuraÃ§Ã£o</p>
+          <p className="text-[10px] text-muted-foreground font-medium">Duração</p>
           <p className="text-sm font-extrabold text-foreground">{fmtDuration(duration)}</p>
         </div>
         <div className="rounded-2xl border border-border/40 bg-card p-3">
           <Route className="w-4 h-4 text-accent mb-1" />
-          <p className="text-[10px] text-muted-foreground font-medium">DistÃ¢ncia</p>
+          <p className="text-[10px] text-muted-foreground font-medium">Distância</p>
           <p className="text-sm font-extrabold text-foreground">{distance.toFixed(2)} km</p>
         </div>
         <div className="rounded-2xl border border-border/40 bg-card p-3">
           <DollarSign className="w-4 h-4 text-accent mb-1" />
-          <p className="text-[10px] text-muted-foreground font-medium">PreÃ§o</p>
+          <p className="text-[10px] text-muted-foreground font-medium">Preço</p>
           <p className="text-sm font-extrabold text-foreground">R$ {price.toFixed(2)}</p>
         </div>
       </div>
 
       {/* Details List */}
       <div className="px-4 mt-6 space-y-4">
-        <h2 className="text-sm font-black font-space uppercase tracking-widest text-muted-foreground px-1">Resumo da sessÃ£o</h2>
+        <h2 className="text-sm font-black font-space uppercase tracking-widest text-muted-foreground px-1">Resumo da sessão</h2>
         <div className="rounded-3xl border border-border/40 bg-card p-6 space-y-6">
           <TimelineRow icon={<Calendar className="w-4 h-4 text-accent" />} label="Data" value={fmtDate(walk.start_time || walk.created_at)} />
-          <TimelineRow icon={<Clock className="w-4 h-4 text-accent" />} label="HorÃ¡rio de inÃ­cio" value={fmtTime(walk.start_time || walk.created_at)} />
-          <TimelineRow icon={<Flag className="w-4 h-4 text-accent" />} label="HorÃ¡rio de tÃ©rmino" value={fmtTime(walk.completed_at)} />
-          <TimelineRow icon={<Home className="w-4 h-4 text-accent" />} label="Ponto de encontro" value={walk.meeting_point_address || 'EndereÃ§o nÃ£o disponÃ­vel'} />
+          <TimelineRow icon={<Clock className="w-4 h-4 text-accent" />} label="Horário de início" value={fmtTime(walk.start_time || walk.created_at)} />
+          <TimelineRow icon={<Flag className="w-4 h-4 text-accent" />} label="Horário de término" value={fmtTime(walk.completed_at)} />
+          <TimelineRow icon={<Home className="w-4 h-4 text-accent" />} label="Ponto de encontro" value={walk.meeting_point_address || 'Endereço não disponível'} />
         </div>
       </div>
 
@@ -304,7 +304,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
                 <Input
                   type="text"
                   inputMode="numeric"
-                  placeholder="Digite o PIN de 6 dÃ­gitos"
+                  placeholder="Digite o PIN de 6 dígitos"
                   maxLength={6}
                   value={pinValue}
                   onChange={(e) => setPinValue(e.target.value.replace(/[^0-9]/g, ''))}
@@ -347,7 +347,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
             <button 
               onClick={async () => {
                 if (!coords || accuracy === null) {
-                  toast.error("Aguardando localizaÃ§Ã£o GPS. Tente novamente em alguns segundos.");
+                  toast.error("Aguardando localização GPS. Tente novamente em alguns segundos.");
                   return;
                 }
                 setArriving(true);
@@ -384,7 +384,7 @@ export const WalkDetails: React.FC<{ isOperational?: boolean }> = ({ isOperation
               )}
               <div className="bg-ink/5 border border-ink/10 rounded-2xl p-4 mb-1 text-center">
                 <p className="text-xs font-bold text-ink/60" data-testid="walk-in-progress-marker">Aviso de passeio em andamento</p>
-                <p className="text-[10px] text-ink/40">FinalizaÃ§Ã£o indisponÃ­vel na Phase 4.1</p>
+                <p className="text-[10px] text-ink/40">Finalização indisponível na Phase 4.1</p>
               </div>
             </>
           )}

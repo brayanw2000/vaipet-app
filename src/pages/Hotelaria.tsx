@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Header } from '@/components/Header';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { MapPin, Building2, Star } from 'lucide-react';
@@ -21,7 +21,7 @@ const Hotelaria = () => {
       rating: 4.8,
       price: "R$ 80/dia",
       coordinates: [-49.2734, -25.4284] as [number, number],
-      amenities: ["Piscina", "VeterinÃ¡rio 24h", "Playground"]
+      amenities: ["Piscina", "Veterinário 24h", "Playground"]
     },
     {
       id: 2,
@@ -30,7 +30,7 @@ const Hotelaria = () => {
       rating: 4.6,
       price: "R$ 120/dia",
       coordinates: [-49.2654, -25.4204] as [number, number],
-      amenities: ["Spa", "Transporte", "CÃ¢meras 24h"]
+      amenities: ["Spa", "Transporte", "Câmeras 24h"]
     },
     {
       id: 3,
@@ -92,7 +92,7 @@ const Hotelaria = () => {
     hotels.forEach(hotel => {
       const markerElement = document.createElement('div');
       markerElement.className = 'w-8 h-8 bg-[#31D880] rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer hover:scale-110 transition-transform';
-      markerElement.innerHTML = '<div class="w-4 h-4 text-white">ðŸ¨</div>';
+      markerElement.innerHTML = '<div class="w-4 h-4 text-white">🏨</div>';
       
       const marker = new mapboxgl.Marker(markerElement)
         .setLngLat(hotel.coordinates)
@@ -123,15 +123,15 @@ const Hotelaria = () => {
       <div className="flex-1 relative">
         <div ref={mapContainer} className="absolute inset-0 w-full h-full" />
         
-        {/* Overlay com tÃ­tulo */}
+        {/* Overlay com título */}
         <div className="absolute top-4 left-4 right-4 z-10">
           <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-lg">
             <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[#31D880]" />
-              Hotelarias PrÃ³ximas
+              Hotelarias Próximas
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {hotels.length} hotelarias encontradas na sua regiÃ£o
+              {hotels.length} hotelarias encontradas na sua região
             </p>
           </div>
         </div>
@@ -149,7 +149,7 @@ const Hotelaria = () => {
                   onClick={() => setSelectedHotel(null)}
                   className="text-muted-foreground hover:text-foreground"
                 >
-                  Ã—
+                  ×
                 </button>
               </div>
               

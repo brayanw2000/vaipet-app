@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as THREE from 'three';
@@ -32,7 +32,7 @@ interface SessionData {
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
-// Compact 3D dog avatar â€” pure decorative, slowly rotating.
+// Compact 3D dog avatar — pure decorative, slowly rotating.
 const DogAvatar: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -184,11 +184,11 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
   }, [data, isDarkMode]);
 
   const handleSubmit = async () => {
-    if (rating === 0) { toast({ title: 'AvaliaÃ§Ã£o necessÃ¡ria', description: 'Selecione de 1 a 5 estrelas.', variant: 'destructive' }); return; }
+    if (rating === 0) { toast({ title: 'Avaliação necessária', description: 'Selecione de 1 a 5 estrelas.', variant: 'destructive' }); return; }
     setIsSubmitting(true);
     try {
       if (sessionId) await supabase.from('walk_sessions').update({ rating, feedback: comment || null }).eq('id', sessionId);
-      toast({ title: 'AvaliaÃ§Ã£o enviada' });
+      toast({ title: 'Avaliação enviada' });
       onComplete();
     } catch {
       toast({ title: 'Erro', description: 'Tente novamente.', variant: 'destructive' });
@@ -205,10 +205,10 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
 
   const pet = data?.pet;
   const actualMin = data?.actual ?? Math.max(1, Math.round(walkDuration / 60));
-  const distance = data?.distanceKm != null ? data.distanceKm.toFixed(2) : 'â€”';
-  const pace = data?.distanceKm && actualMin ? (actualMin / data.distanceKm).toFixed(1) : 'â€”';
+  const distance = data?.distanceKm != null ? data.distanceKm.toFixed(2) : '—';
+  const pace = data?.distanceKm && actualMin ? (actualMin / data.distanceKm).toFixed(1) : '—';
   const timeRange = data?.startTime && data?.endTime
-    ? `${new Date(data.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} â€“ ${new Date(data.endTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    ? `${new Date(data.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} – ${new Date(data.endTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
     : null;
 
   return (
@@ -217,11 +217,11 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
         {/* Minimal header */}
         <div className="px-6 pt-12 pb-6 flex items-center justify-between">
           <div className="w-9" />
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: inkSoft }}>Passeio concluÃ­do</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: inkSoft }}>Passeio concluído</p>
           <div className="w-9" />
         </div>
 
-        {/* Map hero â€” real trajectory */}
+        {/* Map hero — real trajectory */}
         <div className="px-6">
           <div
             className="relative w-full rounded-[28px] overflow-hidden"
@@ -250,17 +250,17 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1" style={{ color: inkSoft }}>Passeio de</p>
           <h2 className="text-[28px] font-extrabold tracking-tight leading-none" style={{ color: ink }}>{pet?.name || petName}</h2>
           <p className="text-sm mt-1.5" style={{ color: inkSoft }}>
-            {[pet?.breed, pet?.age ? `${pet.age} anos` : null, pet?.weight ? `${pet.weight} kg` : null].filter(Boolean).join(' Â· ') || 'Cachorro'}
-            <span className="mx-1.5">Â·</span>com <span style={{ color: ink }}>{walkerName}</span>
+            {[pet?.breed, pet?.age ? `${pet.age} anos` : null, pet?.weight ? `${pet.weight} kg` : null].filter(Boolean).join(' · ') || 'Cachorro'}
+            <span className="mx-1.5">·</span>com <span style={{ color: ink }}>{walkerName}</span>
           </p>
         </div>
 
-        {/* Stats â€” flat row, no cards */}
+        {/* Stats — flat row, no cards */}
         <div className="px-6 pt-6">
           <div className="grid grid-cols-3" style={{ borderTop: `1px solid ${hairline}`, borderBottom: `1px solid ${hairline}` }}>
             {[
-              { label: 'DuraÃ§Ã£o', value: `${actualMin}`, unit: 'min' },
-              { label: 'DistÃ¢ncia', value: distance, unit: 'km' },
+              { label: 'Duração', value: `${actualMin}`, unit: 'min' },
+              { label: 'Distância', value: distance, unit: 'km' },
               { label: 'Ritmo', value: pace, unit: 'min/km' },
             ].map((it, i) => (
               <div key={i} className="py-4 text-center" style={i < 2 ? { borderRight: `1px solid ${hairline}` } : undefined}>
@@ -275,7 +275,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
           )}
         </div>
 
-        {/* Rating â€” minimal */}
+        {/* Rating — minimal */}
         <div className="px-6 pt-8">
           <p className="text-xs font-semibold text-center mb-3" style={{ color: ink }}>Como foi o passeio?</p>
           <div className="flex justify-center gap-1">
@@ -300,17 +300,17 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
           </div>
           {rating > 0 && (
             <p className="text-center text-[11px] mt-2 font-medium" style={{ color: '#31d880' }}>
-              {['PÃ©ssimo','Ruim','Ok','Bom','Excelente'][rating - 1]}
+              {['Péssimo','Ruim','Ok','Bom','Excelente'][rating - 1]}
             </p>
           )}
         </div>
 
-        {/* Comment â€” barely-there input */}
+        {/* Comment — barely-there input */}
         <div className="px-6 pt-6">
           <Textarea
             value={comment}
             onChange={e => setComment(e.target.value)}
-            placeholder="Deixe um comentÃ¡rio (opcional)"
+            placeholder="Deixe um comentário (opcional)"
             rows={2}
             className="rounded-2xl resize-none text-sm"
             style={{ background: cardBg, border: `1px solid ${hairline}`, color: ink }}
@@ -325,14 +325,14 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
             className="w-full py-4 rounded-full font-semibold text-sm tracking-wide text-white transition-all active:scale-[0.98] disabled:opacity-30"
             style={{ background: '#31d880', boxShadow: '0 6px 18px -6px rgba(49,216,128,0.55)' }}
           >
-            {isSubmitting ? 'Enviandoâ€¦' : 'Enviar avaliaÃ§Ã£o'}
+            {isSubmitting ? 'Enviando…' : 'Enviar avaliação'}
           </button>
           <button
             onClick={onComplete}
             className="w-full mt-3 py-3 rounded-full font-semibold text-xs tracking-wide transition-all active:scale-[0.98]"
             style={{ color: inkSoft, background: 'transparent' }}
           >
-            Voltar para o inÃ­cio
+            Voltar para o início
           </button>
         </div>
       </div>

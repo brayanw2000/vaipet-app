@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X, Star, MapPin, Shield, PawPrint } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import { hideMapLabels, enrichMap, tintMapInk } from '@/lib/mapStyle';
@@ -105,7 +105,7 @@ export const WaitingForAcceptance: React.FC<WaitingForAcceptanceProps> = ({
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-  // Minimal floating top pill â€” same clean language as the walking phase.
+  // Minimal floating top pill — same clean language as the walking phase.
   // No bottom sheet: the map stays 100% fullscreen.
   const R = 22;
   const C = 2 * Math.PI * R;
@@ -147,7 +147,7 @@ export const WaitingForAcceptance: React.FC<WaitingForAcceptanceProps> = ({
           <div className="flex flex-col leading-tight pr-2 flex-1">
             <span className="text-[12px] font-semibold" style={{ color: chrome.muted }}>Aguardando</span>
             <span className="text-[15px] font-extrabold tabular-nums whitespace-nowrap" style={{ color: chrome.text }}>
-              {timeLeft <= 0 ? 'Expirado' : `${petwalkerName} â€¢ ${formatTime(timeLeft)}`}
+              {timeLeft <= 0 ? 'Expirado' : `${petwalkerName} • ${formatTime(timeLeft)}`}
             </span>
           </div>
 
@@ -178,7 +178,7 @@ export const WaitingForAcceptance: React.FC<WaitingForAcceptanceProps> = ({
             <div className="flex items-center gap-1 mt-2">
               {[1,2,3,4,5].map(i => <Star key={i} className="w-4 h-4 text-yellow-400 fill-yellow-400" />)}
               <span className="text-sm font-bold text-foreground ml-1">{petwalkerRating}</span>
-              <span className="text-xs text-muted-foreground">({petwalkerWalks} avaliaÃ§Ãµes)</span>
+              <span className="text-xs text-muted-foreground">({petwalkerWalks} avaliações)</span>
             </div>
           </div>
 
@@ -186,7 +186,7 @@ export const WaitingForAcceptance: React.FC<WaitingForAcceptanceProps> = ({
           <div className="grid grid-cols-3 gap-3 px-5 py-4">
             {[
               { label: 'Passeios', value: petwalkerWalks.toString() },
-              { label: 'ExperiÃªncia', value: '2 anos' },
+              { label: 'Experiência', value: '2 anos' },
               { label: 'Taxa resp.', value: '98%' },
             ].map((stat, i) => (
               <div key={i} className="text-center py-3 rounded-xl bg-background border border-border/60">
@@ -201,22 +201,22 @@ export const WaitingForAcceptance: React.FC<WaitingForAcceptanceProps> = ({
             <div className="flex items-center gap-3 p-3 rounded-xl bg-background border border-border/60">
               <MapPin className="w-4 h-4 text-accent flex-shrink-0" />
               <div>
-                <p className="text-xs text-muted-foreground">RegiÃ£o</p>
-                <p className="text-sm font-semibold text-foreground">Centro, SÃ£o Paulo</p>
+                <p className="text-xs text-muted-foreground">Região</p>
+                <p className="text-sm font-semibold text-foreground">Centro, São Paulo</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-background border border-border/60">
               <Shield className="w-4 h-4 text-green-500 flex-shrink-0" />
               <div>
-                <p className="text-xs text-muted-foreground">VerificaÃ§Ã£o</p>
-                <p className="text-sm font-semibold text-foreground">Identidade verificada âœ“</p>
+                <p className="text-xs text-muted-foreground">Verificação</p>
+                <p className="text-sm font-semibold text-foreground">Identidade verificada ✓</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-background border border-border/60">
               <PawPrint className="w-4 h-4 text-accent flex-shrink-0" />
               <div>
                 <p className="text-xs text-muted-foreground">Especialidade</p>
-                <p className="text-sm font-semibold text-foreground">CÃ£es de pequeno e mÃ©dio porte</p>
+                <p className="text-sm font-semibold text-foreground">Cães de pequeno e médio porte</p>
               </div>
             </div>
           </div>

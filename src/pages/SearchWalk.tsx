@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { hideMapLabels, enrichMap, tintMapInk } from '@/lib/mapStyle';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -22,7 +22,7 @@ import { SlideToConfirm } from '../components/SlideToConfirm';
 import { toast } from 'sonner';
 import type { WalkStatus } from '@/types/walk';
 
-/** Estados em que a sessÃ£o Ã© rastreÃ¡vel (posiÃ§Ã£o do walker disponÃ­vel). */
+/** Estados em que a sessão é rastreável (posição do walker disponível). */
 export const TRACKABLE_WALK_STATUSES = [
   'accepted',
   'heading_to_pickup',
@@ -64,14 +64,14 @@ const describeWeather = (code: number, isDay: boolean) => {
     return { Icon: CloudRain, label: 'Chuva' };
   if ([71, 73, 75, 77, 85, 86].includes(code)) return { Icon: CloudSnow, label: 'Neve' };
   if ([95, 96, 99].includes(code)) return { Icon: CloudLightning, label: 'Tempestade' };
-  return { Icon: Cloud, label: 'Tempo estÃ¡vel' };
+  return { Icon: Cloud, label: 'Tempo estável' };
 };
 const isRainCode = (code: number) =>
   [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code);
 
-// Classifica a intensidade da chuva combinando o cÃ³digo WMO (drizzle vs.
-// rain vs. heavy rain vs. thunderstorm) com a precipitaÃ§Ã£o em mm/h do
-// Open-Meteo. Retorna parÃ¢metros prontos para a animaÃ§Ã£o de gotas.
+// Classifica a intensidade da chuva combinando o código WMO (drizzle vs.
+// rain vs. heavy rain vs. thunderstorm) com a precipitação em mm/h do
+// Open-Meteo. Retorna parâmetros prontos para a animação de gotas.
 type RainIntensity = {
   level: 'light' | 'moderate' | 'heavy';
   label: string;
@@ -85,7 +85,7 @@ type RainIntensity = {
 };
 
 const classifyRain = (code: number, precipMm: number): RainIntensity => {
-  // Garoa / drizzle (51-57) ou precipitaÃ§Ã£o muito baixa
+  // Garoa / drizzle (51-57) ou precipitação muito baixa
   const drizzle = [51, 53, 55, 56, 57].includes(code);
   // Chuva forte / heavy: 65, 67, 82 ou tempestade 95/96/99 ou >4 mm/h
   const heavyCode = [65, 67, 82, 95, 96, 99].includes(code);
@@ -143,7 +143,7 @@ const SearchWalk = () => {
   const userMarker = useRef<mapboxgl.Marker | null>(null);
   const walkerMarker = useRef<mapboxgl.Marker | null>(null);
   // Remember the last drawn route so we can re-add the layer after a
-  // style swap (dayâ†”night) WITHOUT re-fetching or re-animating it.
+  // style swap (day↔night) WITHOUT re-fetching or re-animating it.
   const currentRouteCoords = useRef<[number, number][] | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const userLocationRef = useRef<[number, number] | null>(null);
@@ -180,7 +180,7 @@ const SearchWalk = () => {
       }
     } catch (err: unknown) {
       console.error('Quote error:', err);
-      setQuoteError('OrÃ§amento indisponÃ­vel');
+      setQuoteError('Orçamento indisponível');
       setQuote(null);
     } finally {
       setQuoteLoading(false);
@@ -208,14 +208,14 @@ const SearchWalk = () => {
   const [routeInfo, setRouteInfo] = useState<{ duration: number; distance: number } | null>(null);
   const [isDrawingRoute, setIsDrawingRoute] = useState(false);
   const [walkerLocation, setWalkerLocation] = useState<[number, number] | null>(null);
-  // PosiÃ§Ã£o atual real do PetWalker (RPC get_active_walker_location).
+  // Posição atual real do PetWalker (RPC get_active_walker_location).
   const [liveWalkerPosition, setLiveWalkerPosition] = useState<{ lng: number; lat: number; ts: number } | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  // Tema da tela segue a decisÃ£o global.
-  // O mapa segue o clima real (dia/noite) por padrÃ£o.
+  // Tema da tela segue a decisão global.
+  // O mapa segue o clima real (dia/noite) por padrão.
   const { theme, toggle: toggleTheme } = useHomeTheme();
-  // Clima atual no local do usuÃ¡rio (Open-Meteo). `precip` Ã© mm na Ãºltima
-  // hora â€” usado para escalar a intensidade da animaÃ§Ã£o de chuva.
+  // Clima atual no local do usuário (Open-Meteo). `precip` é mm na última
+  // hora — usado para escalar a intensidade da animação de chuva.
   const [weather, setWeather] = useState<{
     temp: number;
     code: number;
@@ -252,12 +252,12 @@ const SearchWalk = () => {
   const [plannedRouteInfo, setPlannedRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const stopMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Estado OPERACIONAL (domÃ­nio): vem exclusivamente do banco
-  // (`walk_sessions.current_status`). Ã‰ a Ãºnica fonte de verdade para
+  // ────────────────────────────────────────────────────────────────
+  // Estado OPERACIONAL (domínio): vem exclusivamente do banco
+  // (`walk_sessions.current_status`). É a única fonte de verdade para
   // rastreamento/polling. `searchStatus` continua sendo apenas estado
-  // de APRESENTAÃ‡ÃƒO (animaÃ§Ãµes e qual componente aparece).
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // de APRESENTAÇÃO (animações e qual componente aparece).
+  // ────────────────────────────────────────────────────────────────
   const [sessionStatus, setSessionStatus] = useState<WalkStatus | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [walker, setWalker] = useState<WalkerProfile | null>(null);
@@ -344,7 +344,7 @@ const SearchWalk = () => {
         const home = session.home_location as { lng: number; lat: number } | null;
         if (home && Number.isFinite(home.lng) && Number.isFinite(home.lat)) {
           commitUserLocation([home.lng, home.lat], true);
-          // On resume, the walker has already arrived â€” anchor the walker
+          // On resume, the walker has already arrived — anchor the walker
           // marker at the pet's home so WalkInProgress mounts cleanly
           // (walkerMarker.setLngLat would crash on null).
           setWalkerLocation([home.lng, home.lat]);
@@ -373,7 +373,7 @@ const SearchWalk = () => {
     const MIN_MARKER_INTERVAL_MS = 1500; // hard rate limit between marker moves
     const MIN_MARKER_MOVE_M = 4;          // ignore sub-jitter GPS noise
     const TRAILING_DEBOUNCE_MS = 600;     // ensure last sample is applied
-    const SNAP_DISTANCE_M = 60;           // huge jump â†’ reset filter (teleport)
+    const SNAP_DISTANCE_M = 60;           // huge jump → reset filter (teleport)
 
     // Accuracy-aware EMA smoothing.
     const smoothLocation = (raw: [number, number], accuracy?: number): [number, number] => {
@@ -389,7 +389,7 @@ const SearchWalk = () => {
         return raw;
       }
       const acc = typeof accuracy === 'number' && accuracy > 0 ? accuracy : 25;
-      let alpha = 0.5 - Math.min(0.42, (acc - 10) / 100); // 10mâ†’0.5, 50mâ†’0.1
+      let alpha = 0.5 - Math.min(0.42, (acc - 10) / 100); // 10m→0.5, 50m→0.1
       alpha = Math.max(0.08, Math.min(0.6, alpha));
       // If the user is clearly moving (big jump but under snap threshold),
       // ease toward the new sample faster to avoid trailing.
@@ -780,8 +780,8 @@ const SearchWalk = () => {
   // Center user marker above bottom sheet.
   useEffect(() => {
     if (!map.current || !userLocation) return;
-    // Only re-pad the map when the SCHEDULE sheet opens/closes â€” otherwise
-    // a transition like "found â†’ waiting" would interrupt the fitBounds
+    // Only re-pad the map when the SCHEDULE sheet opens/closes — otherwise
+    // a transition like "found → waiting" would interrupt the fitBounds
     // animation that just framed the user + walker, causing a visible flick.
     const h = window.innerHeight;
     const safeBottom = parseInt(
@@ -950,7 +950,7 @@ const SearchWalk = () => {
         _scheduled_for: scheduledForIso,
         _meeting_point_lng: Number(userLocation[0]),
         _meeting_point_lat: Number(userLocation[1]),
-        _meeting_point_address: 'LocalizaÃ§Ã£o atual'
+        _meeting_point_address: 'Localização atual'
       });
 
       if (rpcError) throw rpcError;
@@ -1086,8 +1086,8 @@ const SearchWalk = () => {
       lastAppliedSeq = seq;
       const status = (data.current_status ?? null) as WalkStatus | null;
       if (data.matching_expires_at) setMatchingExpiresAt(data.matching_expires_at);
-      // O banco Ã© a autoridade: `sessionStatus` dirige o rastreamento;
-      // `searchStatus` apenas troca a apresentaÃ§Ã£o.
+      // O banco é a autoridade: `sessionStatus` dirige o rastreamento;
+      // `searchStatus` apenas troca a apresentação.
       setSessionStatus(status);
       console.info('[walk-status]', {
         origin,
@@ -1102,8 +1102,8 @@ const SearchWalk = () => {
       } else if (status === 'expired' || status === 'cancelled') {
         handleTimeout();
       }
-      // A recuperaÃ§Ã£o periÃ³dica sÃ³ para em estados terminais â€” enquanto a
-      // sessÃ£o estiver rastreÃ¡vel mantemos a sincronia leve com o banco.
+      // A recuperação periódica só para em estados terminais — enquanto a
+      // sessão estiver rastreável mantemos a sincronia leve com o banco.
       if ((status === 'completed' || status === 'cancelled' || status === 'expired') && pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
@@ -1138,8 +1138,8 @@ const SearchWalk = () => {
         if (status === 'SUBSCRIBED') fetchStatus('initial');
       });
 
-    // Consulta imediata + recuperaÃ§Ã£o periÃ³dica (independente de Realtime
-    // e de qualquer estado de apresentaÃ§Ã£o).
+    // Consulta imediata + recuperação periódica (independente de Realtime
+    // e de qualquer estado de apresentação).
     fetchStatus('initial');
     pollTimer = setInterval(() => { fetchStatus('recovery'); }, 5000);
 
@@ -1158,15 +1158,15 @@ const SearchWalk = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSessionId, handleAccepted]);
 
-  /** Rastreamento derivado do domÃ­nio, NUNCA da apresentaÃ§Ã£o. */
+  /** Rastreamento derivado do domínio, NUNCA da apresentação. */
   const isTrackableSession = useMemo(
     () => !!currentSessionId && isTrackableStatus(sessionStatus),
     [currentSessionId, sessionStatus]
   );
 
-  // Sincroniza a APRESENTAÃ‡ÃƒO com o domÃ­nio: se a sessÃ£o estÃ¡ rastreÃ¡vel
-  // mas a UI ficou atrÃ¡s (evento perdido, guarda antiga, animaÃ§Ã£o), promove
-  // a tela operacional. O rastreamento jÃ¡ roda independentemente disto.
+  // Sincroniza a APRESENTAÇÃO com o domínio: se a sessão está rastreável
+  // mas a UI ficou atrás (evento perdido, guarda antiga, animação), promove
+  // a tela operacional. O rastreamento já roda independentemente disto.
   useEffect(() => {
     if (!isTrackableSession) return;
     if (searchStatus !== 'walking' && searchStatus !== 'reviewing') {
@@ -1174,21 +1174,21 @@ const SearchWalk = () => {
     }
   }, [isTrackableSession, searchStatus]);
   
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // PosiÃ§Ã£o atual do PetWalker: fonte canÃ´nica ÃšNICA Ã© a RPC segura
+  // ────────────────────────────────────────────────────────────────
+  // Posição atual do PetWalker: fonte canônica ÚNICA é a RPC segura
   // `get_active_walker_location` (autorizada pelo servidor apenas para
-  // os participantes da sessÃ£o). `route_coordinates` Ã© usado sÃ³ para o
-  // rastro histÃ³rico. Consulta imediata + atualizaÃ§Ã£o periÃ³dica,
-  // com proteÃ§Ã£o contra respostas fora de ordem e sem descartar a
-  // Ãºltima posiÃ§Ã£o vÃ¡lida em erro de rede.
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // os participantes da sessão). `route_coordinates` é usado só para o
+  // rastro histórico. Consulta imediata + atualização periódica,
+  // com proteção contra respostas fora de ordem e sem descartar a
+  // última posição válida em erro de rede.
+  // ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!currentSessionId || !isTrackableSession) {
       console.info('[walk-tracking] polling NOT started', {
         sessionId: currentSessionId,
         sessionStatus,
         searchStatus: searchStatusRef.current,
-        reason: !currentSessionId ? 'sem sessÃ£o' : 'status nÃ£o rastreÃ¡vel',
+        reason: !currentSessionId ? 'sem sessão' : 'status não rastreável',
       });
       return;
     }
@@ -1205,11 +1205,11 @@ const SearchWalk = () => {
       const loc = data[0] as { lat: number | null; lng: number | null; accuracy: number | null; updated_at: string | null };
       if (typeof loc.lng !== 'number' || typeof loc.lat !== 'number') return;
       const ts = loc.updated_at ? new Date(loc.updated_at).getTime() : Date.now();
-      if (ts < lastTs) return; // resposta antiga nÃ£o sobrescreve a mais recente
+      if (ts < lastTs) return; // resposta antiga não sobrescreve a mais recente
       lastTs = ts;
       console.info('[walk-tracking] position', { lng: loc.lng, lat: loc.lat, ts });
       setLiveWalkerPosition({ lng: loc.lng, lat: loc.lat, ts });
-      // Semeia a posiÃ§Ã£o inicial do mapa uma Ãºnica vez (sem remontÃ¡-lo depois).
+      // Semeia a posição inicial do mapa uma única vez (sem remontá-lo depois).
       setWalkerLocation((prev) => prev ?? [loc.lng as number, loc.lat as number]);
     };
 
@@ -1225,7 +1225,7 @@ const SearchWalk = () => {
   const handleOpenChat = () => {
     // Chat implementation will use the session state
   };
-  const handleRequestPhotos = () => alert('SolicitaÃ§Ã£o de fotos enviada!');
+  const handleRequestPhotos = () => alert('Solicitação de fotos enviada!');
   const handleTimeout = () => { cleanupPreviousSearch(); setSearchStatus('idle'); };
   const handleCancel = () => setShowCancelDialog(true);
   const handleGoHome = () => { setShowCancelDialog(false); navigate('/'); };
@@ -1245,8 +1245,8 @@ const SearchWalk = () => {
         });
         if (error) throw error;
       } catch (e) {
-        console.error('Falha ao cancelar solicitaÃ§Ã£o:', e);
-        toast.error('Erro ao cancelar solicitaÃ§Ã£o');
+        console.error('Falha ao cancelar solicitação:', e);
+        toast.error('Erro ao cancelar solicitação');
         return; 
       }
     }
@@ -1435,7 +1435,7 @@ const SearchWalk = () => {
               </div>
             ))}
 
-            {/* Splashes no chÃ£o â€” anÃ©is pulsando na faixa inferior. */}
+            {/* Splashes no chão — anéis pulsando na faixa inferior. */}
             {Array.from({ length: splashCount }).map((_, i) => {
               const left = Math.random() * 100;
               const top = 70 + Math.random() * 28;
@@ -1470,7 +1470,7 @@ const SearchWalk = () => {
             <ArrowLeft className="w-5 h-5" style={{ color: ui.iconColor }} />
           </button>
           <div className="flex gap-2">
-            {/* Weather chip â€” current temperature + condition for the user's location */}
+            {/* Weather chip — current temperature + condition for the user's location */}
             {(() => {
               const w = weather
                 ? describeWeather(weather.code, weather.isDay)
@@ -1488,7 +1488,7 @@ const SearchWalk = () => {
                     className="text-[15px] font-semibold tabular-nums"
                     style={{ color: ui.text, fontFamily: 'Space Grotesk, sans-serif' }}
                   >
-                    {weather ? `${weather.temp}Â°` : 'â€”'}
+                    {weather ? `${weather.temp}°` : '—'}
                   </span>
                 </div>
               );
@@ -1506,7 +1506,7 @@ const SearchWalk = () => {
         <button onClick={() => map.current?.zoomOut()} className="w-10 h-10 rounded-full shadow-lg flex items-center justify-center" style={{ background: ui.chip, boxShadow: ui.shadow }}><Minus className="w-4 h-4" style={{ color: ui.iconColor }} /></button>
       </div>
 
-      {/* Bottom fade â€” always visible across every search-walk step so the
+      {/* Bottom fade — always visible across every search-walk step so the
           floating controls/sheet sit on a soft gradient instead of the bare map. */}
       <div
         className="absolute left-0 right-0 bottom-0 z-20 pointer-events-none"
@@ -1533,7 +1533,7 @@ const SearchWalk = () => {
             }}
           >
             <div className="px-5 pt-4 pb-5">
-              {/* Step indicator â€” 3 minimal dots */}
+              {/* Step indicator — 3 minimal dots */}
               <div className="flex items-center justify-center gap-1.5 mb-4">
                 {[1, 2, 3, 4].map(n => (
                   <span
@@ -1547,7 +1547,7 @@ const SearchWalk = () => {
                 ))}
               </div>
 
-              {/* STEP 1 â€” Quando? */}
+              {/* STEP 1 — Quando? */}
               {step === 1 && (
                 <div key="s1" className="animate-fade-in">
                   <p className="text-[11px] font-bold uppercase tracking-wider mb-3 px-1" style={{ color: ui.muted }}>Iniciar o passeio</p>
@@ -1690,7 +1690,7 @@ const SearchWalk = () => {
                           </div>
                           <div className="text-left">
                             <p className="text-sm font-bold" style={{ color: ui.text }}>Cadastre um pet</p>
-                            <p className="text-[11px]" style={{ color: ui.muted }}>VocÃª precisa de um pet para passear</p>
+                            <p className="text-[11px]" style={{ color: ui.muted }}>Você precisa de um pet para passear</p>
                           </div>
                         </button>
                       ) : (
@@ -1709,7 +1709,7 @@ const SearchWalk = () => {
                                   const isNewPetIncompatible = nonEligible.includes(p.behavioral_notes || '');
                                   
                                   if (hasIncompatibleSelected || isNewPetIncompatible) {
-                                    alert(`Passeios COLETIVOS sÃ£o permitidos apenas para pets com comportamento leve. Um dos pets selecionados possui comportamento nÃ£o elegÃ­vel.`);
+                                    alert(`Passeios COLETIVOS são permitidos apenas para pets com comportamento leve. Um dos pets selecionados possui comportamento não elegível.`);
                                     return;
                                   }
                                 }
@@ -1791,10 +1791,10 @@ const SearchWalk = () => {
                 </div>
               )}
 
-              {/* STEP 3 â€” DuraÃ§Ã£o (mostrada APÃ“S escolher o tipo de passeio) */}
+              {/* STEP 3 — Duração (mostrada APÓS escolher o tipo de passeio) */}
               {step === 3 && (
                 <div key="s2" className="animate-fade-in">
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3 px-1" style={{ color: ui.muted }}>DuraÃ§Ã£o</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3 px-1" style={{ color: ui.muted }}>Duração</p>
                   <div
                     className="flex items-center justify-between mb-4 rounded-3xl px-3 py-3"
                     style={{ background: ui.inner, border: ui.borderSoft, boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}
@@ -1804,7 +1804,7 @@ const SearchWalk = () => {
                       disabled={selectedMinutes <= 15}
                       className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
                       style={{ background: '#31d880', boxShadow: '0 6px 16px rgba(49,216,128,0.35)' }}
-                      aria-label="Diminuir duraÃ§Ã£o"
+                      aria-label="Diminuir duração"
                     >
                       <Minus className="w-5 h-5 text-white" strokeWidth={3} />
                     </button>
@@ -1822,7 +1822,7 @@ const SearchWalk = () => {
                       onClick={() => setSelectedMinutes((m) => m + 15)}
                       className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
                       style={{ background: '#31d880', boxShadow: '0 6px 16px rgba(49,216,128,0.35)' }}
-                      aria-label="Aumentar duraÃ§Ã£o"
+                      aria-label="Aumentar duração"
                     >
                       <Plus className="w-5 h-5 text-white" strokeWidth={3} />
                     </button>
@@ -1830,10 +1830,10 @@ const SearchWalk = () => {
 
                   <p className="text-center text-sm font-extrabold mb-4" style={{ color: '#31d880' }}>
                     {quoteLoading
-                      ? 'Calculandoâ€¦'
+                      ? 'Calculando…'
                       : quote
                         ? Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(quote.total_price_cents / 100)
-                        : (quoteError ?? 'â€”')}
+                        : (quoteError ?? '—')}
                     {quote && (
                       <span className="ml-1.5 text-[11px] font-semibold" style={{ color: ui.muted }}>
                         ({Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(quote.price_per_minute_cents / 100)}/min)
@@ -1861,7 +1861,7 @@ const SearchWalk = () => {
                 </div>
               )}
 
-              {/* STEP 2 â€” Tipo de passeio (escolhido ANTES da duraÃ§Ã£o) */}
+              {/* STEP 2 — Tipo de passeio (escolhido ANTES da duração) */}
               {step === 2 && (() => {
                 const isCollective = selectedPets.length > 1;
                 const types: Array<{
@@ -1870,8 +1870,8 @@ const SearchWalk = () => {
                   Icon: LucideIcon;
                   desc: string;
                 }> = [
-                  { id: 'livre', label: isCollective ? 'Coletivo' : 'Livre', Icon: Sparkles, desc: isCollective ? 'Passeio com mÃºltiplos pets selecionados.' : 'O petwalker decide tudo sobre o passeio.' },
-                  { id: 'local', label: 'Local', Icon: MapIcon, desc: 'VocÃª define locais e rotas especÃ­ficas.' },
+                  { id: 'livre', label: isCollective ? 'Coletivo' : 'Livre', Icon: Sparkles, desc: isCollective ? 'Passeio com múltiplos pets selecionados.' : 'O petwalker decide tudo sobre o passeio.' },
+                  { id: 'local', label: 'Local', Icon: MapIcon, desc: 'Você define locais e rotas específicas.' },
                 ];
                 return (
                 <div key="s3" className="animate-fade-in">
@@ -1881,7 +1881,7 @@ const SearchWalk = () => {
                     className="relative flex items-center p-1.5 mb-3 rounded-full"
                     style={{ background: ui.inner, border: ui.borderSoft, boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}
                   >
-                    {/* Sliding indicator â€” 2 options, 50% each */}
+                    {/* Sliding indicator — 2 options, 50% each */}
                     <div
                       className="absolute top-1.5 bottom-1.5 rounded-full transition-all duration-500"
                       style={{
@@ -2008,7 +2008,7 @@ const SearchWalk = () => {
                         <input
                           value={addrQuery}
                           onChange={(e) => setAddrQuery(e.target.value)}
-                          placeholder="Buscar endereÃ§o ou local..."
+                          placeholder="Buscar endereço ou local..."
                           className="flex-1 bg-transparent outline-none text-sm font-semibold"
                           style={{ color: ui.text }}
                         />
@@ -2051,7 +2051,7 @@ const SearchWalk = () => {
 
                       {plannedRouteInfo && localStops.length > 0 && (
                         <p className="mt-2 text-[11px] font-bold uppercase tracking-wider px-1" style={{ color: ui.muted }}>
-                          Rota: {(plannedRouteInfo.distance / 1000).toFixed(1)} km Â· ~{Math.round(plannedRouteInfo.duration / 60)} min
+                          Rota: {(plannedRouteInfo.distance / 1000).toFixed(1)} km · ~{Math.round(plannedRouteInfo.duration / 60)} min
                         </p>
                       )}
                     </div>
@@ -2079,7 +2079,7 @@ const SearchWalk = () => {
                 );
               })()}
 
-              {/* STEP 4 â€” Confirmar */}
+              {/* STEP 4 — Confirmar */}
               {step === 4 && (
                 <div key="s4" className="animate-fade-in">
                   <div className="flex items-center justify-between mb-3 px-1">
@@ -2105,7 +2105,7 @@ const SearchWalk = () => {
                       </span>
                     </div>
                     <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${ui.divider}` }}>
-                      <span className="text-xs font-semibold" style={{ color: ui.muted }}>DuraÃ§Ã£o</span>
+                      <span className="text-xs font-semibold" style={{ color: ui.muted }}>Duração</span>
                       <span className="text-sm font-extrabold" style={{ color: ui.text }}>
                         {selectedMinutes >= 60 && selectedMinutes % 60 === 0
                           ? `${selectedMinutes / 60}h`
@@ -2116,7 +2116,7 @@ const SearchWalk = () => {
                     </div>
                     {walkType === 'local' && localStops.length > 0 && (
                       <div className="px-4 py-3" style={{ borderTop: `1px solid ${ui.divider}` }}>
-                        <p className="text-xs font-semibold mb-2" style={{ color: ui.muted }}>EndereÃ§os</p>
+                        <p className="text-xs font-semibold mb-2" style={{ color: ui.muted }}>Endereços</p>
                         <div className="flex flex-col gap-1.5">
                           {localStops.map((s, i) => (
                             <div key={s.id} className="flex items-start gap-2">
@@ -2141,7 +2141,7 @@ const SearchWalk = () => {
                         ) : quote ? (
                           Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(quote.total_price_cents / 100)
                         ) : (
-                          'â€”'
+                          '—'
                         )}
                       </span>
                     </div>
@@ -2150,7 +2150,7 @@ const SearchWalk = () => {
                   <SlideToConfirm
                     label={
                       pets.length === 0 
-                        ? 'Cadastre um pet para comeÃ§ar' 
+                        ? 'Cadastre um pet para começar' 
                         : selectedPets.length === 0 
                         ? 'Selecione um pet' 
 
@@ -2199,7 +2199,7 @@ const SearchWalk = () => {
                   {searchStatus === 'found' ? 'Encontrado' : 'Buscando'}
                 </span>
                 <span className="text-[15px] font-extrabold whitespace-nowrap" style={{ color: ui.text }}>
-                  {searchStatus === 'found' ? (walker?.firstName ?? 'Pet Walker') : 'Procurando passeadorâ€¦'}
+                  {searchStatus === 'found' ? (walker?.firstName ?? 'Pet Walker') : 'Procurando passeador…'}
                 </span>
               </div>
             </div>
