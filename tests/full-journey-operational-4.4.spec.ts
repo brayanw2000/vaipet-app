@@ -316,11 +316,16 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         await ownerPage!.locator('#tour-start-walk').click();
 
         // STEP 1 — pet (único pet do dono).
+        // FIXTURE determinística: o Owner E2E tem EXATAMENTE um pet e o
+        // SearchWalk (fetchPets) AUTO-SELECIONA esse pet único (petData.length
+        // === 1 → setSelectedPets([petData[0]])). O clique no card é um
+        // TOGGLE — clicá-lo DESELECIONARIA o pet e desabilitaria o botão
+        // 'Selecione pelo menos um pet'. Portanto: aguardar o card renderizado,
+        // NÃO clicar, e confirmar a seleção automática real do produto.
         const petCard = ownerPage!.getByTestId('pet-selection-card').first();
         await expect(petCard).toBeVisible({ timeout: 15000 });
-        await petCard.click();
         const confirmPet = ownerPage!.getByTestId('confirm-pet-selection');
-        await expect(confirmPet).toBeEnabled({ timeout: 10000 });
+        await expect(confirmPet).toBeEnabled({ timeout: 15000 });
         await confirmPet.click();
 
         // STEP 2 — tipo de passeio: Livre.
