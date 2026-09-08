@@ -269,6 +269,9 @@ const SearchWalk = () => {
   // Resume walk state.
   const [isResuming, setIsResuming] = useState<boolean>(() => !!searchParams.get('resume'));
   const resumeHandledRef = useRef(false);
+  // Auto-recovery (mount/reload) de uma sessão `searching` existente: roda
+  // UMA vez por mount e impede consultas duplicadas em cascata.
+  const searchingRecoveryRef = useRef(false);
   // Return phase state — estados EXCLUSIVAMENTE de loading. A autoridade do
   // domínio (returning/completed) vive em `sessionStatus`.
   const [isRequestingReturn, setIsRequestingReturn] = useState(false);
@@ -418,6 +421,40 @@ const SearchWalk = () => {
       }
     })();
   }, [searchParams, user, setSearchParams, commitUserLocation, userLocation]);
+
+  // ---------- AUTO-RECOVERY de sessão `searching` no mount/reload ----------
+  // Se o Owner recarregar /search-walk enquanto existe uma sessão `searching`
+  // real (criada pela própria UI, nunca inserida por teste/admin), o banco
+  // continua sendo a autoridade: rediscovery a MESMA sessão do usuário
+  // autenticado e restaura a tela de espera SEM nenhuma ação do usuário e
+  // SEM chamar create_walk_request. O escopo é NARROW: apenas `searching`.
+  useEffect(() => {
+    if (!user || searchingRecoveryRef.current) return;
+    // O fluxo explícito ?resume= (in_progress/returning/completed) é dono do
+    // mount quando presente — a recuperação automática não pode competir.
+    if (searchParams.get('resume')) return;
+    searchingRecoveryRef.current = true;
+    (async () => {
+      try {
+        const { data: session, error } = await supabase
+          .from('walk_sessions')
+          .select('id, current_status')
+          .eq('customer_id', user.id)
+          .eq('current_status', 'searching')
+          .maybeSingle();
+        // Fail closed: erro ou ausência de sessão → permanece idle. Nunca
+        // fabrica estado de espera nem cria uma nova solicitação sozinho.
+        if (error || !session) return;
+        setCurrentSessionId(session.id);
+        setSessionStatus('searching');
+        setSearchStatus('waiting');
+      } catch (e) {
+        console.error('[SearchWalk] auto-recovery searching failed:', e);
+        // Fail closed: mantém idle; nenhuma sessão nova é criada.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, searchParams]);
 
   useEffect(() => {
     let watchId: number;
