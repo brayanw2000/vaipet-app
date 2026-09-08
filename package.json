@@ -22,6 +22,7 @@
     "test:e2e:phase42:operational": "playwright test tests/gps-tracking-operational-4.2.spec.ts",
     "test:e2e:phase43:security": "playwright test tests/completion-security-4.3.spec.ts",
     "test:e2e:phase43:operational": "playwright test tests/completion-operational-4.3.spec.ts",
+    "test:e2e:phase44:blocker": "playwright test tests/arrival-blocker-4.4.spec.ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
 
   },
