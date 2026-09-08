@@ -62,12 +62,13 @@ BEGIN
     RAISE EXCEPTION 'Walk is not completed and cannot be reviewed' USING ERRCODE = '55006';
   END IF;
 
-  -- Idempotency / immutability:
+  -- Idempotency / immutability (EXACT equality — no ROUND, no truncation,
+  -- no tolerance):
   --   - rating IS NULL              -> first review, persist it
   --   - same rating + same feedback -> retry-safe idempotent TRUE
   --   - different rating/feedback   -> reject (one immutable review)
   IF _session.rating IS NOT NULL THEN
-    IF ROUND(_session.rating)::integer = _rating
+    IF _session.rating = _rating::numeric
        AND _session.feedback IS NOT DISTINCT FROM _normalized_feedback THEN
       RETURN TRUE;
     END IF;
@@ -90,9 +91,7 @@ BEGIN
 
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public;
+$$;
 
 -- ACL: revoke broadly, grant narrowly. Authorization is also enforced inside
 -- the SECURITY DEFINER function itself.

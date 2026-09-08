@@ -299,16 +299,32 @@ test.describe('Phase 4.4: Review Security (Patch I)', () => {
     const session = await createSession('completed');
     const ownerClient = await getAuthenticatedClient(ownerEmail);
 
-    // Direct table UPDATE must NOT succeed for authenticated customers.
-    const { error: upErr } = await ownerClient
+    // Direct table UPDATE must NOT mutate the session for authenticated
+    // customers. RLS UPDATE denial may manifest EITHER as an explicit
+    // permission error OR as a silently filtered (zero-row) update — the
+    // security property is "no mutation", not "PostgREST necessarily errors".
+    const { data: directRows, error: upErr } = await ownerClient
       .from('walk_sessions')
       .update({ rating: 5, feedback: 'bypass attempt' })
-      .eq('id', session.id);
-    expect(upErr).not.toBeNull();
+      .eq('id', session.id)
+      .select('id, rating, feedback');
 
+    if (upErr === null) {
+      // No error: denial must have filtered the row — returned rows MUST be empty.
+      expect(directRows || []).toHaveLength(0);
+    } else {
+      // Explicit RLS/permission error is an acceptable blocked result.
+      expect(upErr).not.toBeNull();
+    }
+
+    // Authoritative audit: nothing was mutated.
     const s = await auditSession(session.id);
     expect(s.rating).toBeNull();
     expect(s.feedback).toBeNull();
+    expect(s.customer_id).toBe(ownerId);
+    expect(s.walker_id).toBe(walkerId);
+    expect(s.status).toBe('completed');
+    expect(s.current_status).toBe('completed');
   });
 
   test('I. tentativas falhas não mutam rating/feedback/status/ownership', async () => {
