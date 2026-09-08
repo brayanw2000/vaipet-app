@@ -434,6 +434,7 @@ const SearchWalk = () => {
     // mount quando presente — a recuperação automática não pode competir.
     if (searchParams.get('resume')) return;
     searchingRecoveryRef.current = true;
+    let cancelled = false;
     (async () => {
       try {
         const { data: session, error } = await supabase
@@ -444,7 +445,8 @@ const SearchWalk = () => {
           .maybeSingle();
         // Fail closed: erro ou ausência de sessão → permanece idle. Nunca
         // fabrica estado de espera nem cria uma nova solicitação sozinho.
-        if (error || !session) return;
+        // `cancelled` impede setState após unmount/cleanup do efeito.
+        if (cancelled || error || !session) return;
         setCurrentSessionId(session.id);
         setSessionStatus('searching');
         setSearchStatus('waiting');
@@ -453,6 +455,9 @@ const SearchWalk = () => {
         // Fail closed: mantém idle; nenhuma sessão nova é criada.
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, searchParams]);
 
