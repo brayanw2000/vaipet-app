@@ -49,6 +49,11 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY) {
 
 const PASSWORD = 'VaiPet@2026';
 
+// create_walk_request RETORNA uuid (NÃO boolean). Matcher estrito de UUID v4
+// conforme as variantes aceitas pelo Postgres gen_random_uuid().
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 // GPS do OWNER (browser) = ponto de encontro = home_location esperada
 // (SearchWalk envia userLocation como _meeting_point_lng/_meeting_point_lat).
 const MEETING = { lng: -46.7, lat: -23.6 };
@@ -176,6 +181,7 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
   let ownerPage: Page | null = null;
   let walkerPage: Page | null = null;
   let ownerPin = '';
+  let rpcReturnedUuid = '';
 
   // Observador factual das respostas RPC reais das páginas (HTTP + body).
   const rpcCalls: Record<string, Array<{ status: number; body: unknown }>> = {};
@@ -347,16 +353,24 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         });
         await ownerPage!.mouse.up();
 
-        // PROVA: create_walk_request disparada pela UI (HTTP 200 + true).
+        // PROVA: create_walk_request disparada pela UI. A RPC RETORNA uuid
+        // (NÃO boolean) — exige HTTP 200 + corpo = UUID v4 válido.
         await expect
           .poll(
             () => {
               const rpc = lastRpc('create_walk_request');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
+              return !!(
+                rpc &&
+                rpc.status === 200 &&
+                typeof rpc.body === 'string' &&
+                UUID_RE.test(rpc.body)
+              );
             },
-            { timeout: 20000, message: 'create_walk_request HTTP 200 + true via UI' }
+            { timeout: 20000, message: 'create_walk_request HTTP 200 + UUID via UI' }
           )
           .toBeTruthy();
+        rpcReturnedUuid = String(lastRpc('create_walk_request')!.body);
+        log(`create_walk_request retornou UUID via UI: ${rpcReturnedUuid}`);
 
         // Sessão criada pela UI no banco — MESMA para toda a jornada.
         await expect
@@ -383,8 +397,11 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
           .limit(1)
           .maybeSingle();
         if (cErr || !created) throw new Error('session_not_found_after_ui_creation');
+        // PROVA FORTE: a sessão descoberta no banco É exatamente o UUID
+        // retornado pela create_walk_request da UI REAL.
+        expect(created.id).toBe(rpcReturnedUuid);
         sessionId = created.id;
-        log(`session_id criado pela UI: ${sessionId}`);
+        log(`session_id criado pela UI: ${sessionId} (== UUID retornado pela RPC)`);
 
         // Higiene de cleanup: marcar a sessão como E2E do run (NÃO toca
         // status/home_location — somente permite o failClosedCleanup achar).
