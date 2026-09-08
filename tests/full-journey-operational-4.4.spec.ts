@@ -610,17 +610,25 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
 
         const submitBtn = walkerPage!.getByTestId('pickup-pin-submit');
         await expect(submitBtn).toBeEnabled({ timeout: 10000 });
+
+        // A resposta HTTP real é capturada via waitForResponse ARMADO ANTES do clique.
+        // WalkDetails.handleConfirmPickup executa window.location.reload() imediatamente
+        // após data === true, o que pode correr contra o observer genérico assíncrono
+        // (rpcCalls/lastRpc) e perder o body antes do reload. O waitForResponse escuta
+        // o evento de response diretamente e sobrevive à navegação.
+        const confirmPickupResponsePromise = walkerPage!.waitForResponse(
+          (res) =>
+            res.url().includes('/rest/v1/rpc/petwalker_confirm_pickup') &&
+            res.request().method() === 'POST',
+          { timeout: 20000 }
+        );
+
         await submitBtn.click();
 
-        await expect
-          .poll(
-            () => {
-              const rpc = lastRpc('petwalker_confirm_pickup');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
-            },
-            { timeout: 20000, message: 'petwalker_confirm_pickup HTTP 200 + true' }
-          )
-          .toBeTruthy();
+        const confirmPickupResponse = await confirmPickupResponsePromise;
+        expect(confirmPickupResponse.status()).toBe(200);
+        const confirmPickupBody = await confirmPickupResponse.json();
+        expect(confirmPickupBody).toBe(true);
 
         await expect
           .poll(
