@@ -306,10 +306,27 @@ test.describe('Phase 4.5A1: Owner searching reload recovery (red proof)', () => 
       });
 
       await test.step('AÇÃO DE RESILIÊNCIA: reload da MESMA página /search-walk', async () => {
+        // Fatos de URL pré-reload: a rota normal pode conter query params
+        // legítimos pré-existentes (ex.: ?petId=<uuid> colocado pelo produto
+        // ao navegar de /inicio). O teste NÃO injeta ?resume — a regra é que
+        // o TESTE não fabrica estado de recuperação, não que a URL não pode
+        // ter nenhum parâmetro.
+        const preReloadPath = new URL(ownerPage!.url()).pathname;
+        expect(preReloadPath).toBe('/search-walk');
+        log(`pré-reload: ${ownerPage!.url()}`);
+
         rpcCalls['create_walk_request'] = []; // zero chamadas novas permitidas
         await ownerPage!.reload({ waitUntil: 'domcontentloaded' });
-        // URL permanece a rota normal — NENHUM ?resume injetado pelo teste.
-        await expect(ownerPage!).toHaveURL(/\/search-walk\/?$/, { timeout: 15000 });
+
+        // Apenas o PATHNAME da rota é verificado — o reload preserva query
+        // params legítimos (?petId), e o produto pode adicionar/alterar
+        // parâmetros na própria recuperação sem quebrar este teste.
+        await expect
+          .poll(() => new URL(ownerPage!.url()).pathname, {
+            timeout: 15000,
+            message: 'pathname permanece /search-walk após reload',
+          })
+          .toBe('/search-walk');
         log(`reloaded: ${ownerPage!.url()}`);
       });
 
