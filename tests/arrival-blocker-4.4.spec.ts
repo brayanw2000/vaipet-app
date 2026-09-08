@@ -69,8 +69,28 @@ async function provisionUser(runId: string, kind: 'pet_owner' | 'petwalker') {
     onboarding_completed: true,
     phone: '(11) 96666-6666',
     age: 32,
+    // FIXTURE GAP (Blocker Patch A1): o handle_new_user() do auth NÃO copia
+    // signup_intent para profiles. Sem este campo o PetwalkerGpsProvider
+    // mantém isPetwalker=false e o Painel nunca fica online, mesmo com
+    // set_petwalker_availability OK. O perfil E2E precisa refletir com
+    // verdade o usuário provisionado.
+    signup_intent: kind,
   });
   if (profErr) throw new Error(`profile_upsert_failed: ${JSON.stringify(profErr)}`);
+
+  // PREFLIGHT FACTUAL (fail-closed): provar que profiles.signup_intent === kind
+  // foi realmente persistido — sem isto o teste falha cedo, não no aceite.
+  const { data: pf, error: pfErr } = await admin
+    .from('profiles')
+    .select('signup_intent')
+    .eq('id', id)
+    .single();
+  if (pfErr) throw new Error(`profile_preflight_failed: ${JSON.stringify(pfErr)}`);
+  if (pf!.signup_intent !== kind) {
+    throw new Error(
+      `profile_signup_intent_mismatch: esperado ${kind}, obtido ${pf!.signup_intent}`
+    );
+  }
 
   if (kind === 'petwalker') {
     const { error: roleErr } = await admin.from('user_roles').insert({ user_id: id, role: 'petwalker' });
@@ -89,6 +109,34 @@ async function provisionUser(runId: string, kind: 'pet_owner' | 'petwalker') {
       last_known_location: `SRID=4326;POINT(${WALKER_POS.lng} ${WALKER_POS.lat})`,
     });
     if (wpErr) throw new Error(`walker_profile_failed: ${JSON.stringify(wpErr)}`);
+
+    // PREFLIGHT PetWalker (fail-closed): papel + perfil aprovado/disponível,
+    // pré-condições reais do matching e do painel online. NÃO fabrica isOnline.
+    const { data: roles, error: rolesErr } = await admin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', id);
+    if (rolesErr) throw new Error(`roles_preflight_failed: ${JSON.stringify(rolesErr)}`);
+    if (!roles!.some((r) => r.role === 'petwalker')) {
+      throw new Error('walker_role_missing: user_roles sem petwalker');
+    }
+
+    const { data: wp, error: wpChkErr } = await admin
+      .from('petwalker_profiles')
+      .select('approval_status, availability_status, is_accepting_requests')
+      .eq('user_id', id)
+      .single();
+    if (wpChkErr) throw new Error(`walker_profile_preflight_failed: ${JSON.stringify(wpChkErr)}`);
+    if (
+      wp!.approval_status !== 'approved' ||
+      wp!.availability_status !== 'available' ||
+      wp!.is_accepting_requests !== true
+    ) {
+      throw new Error(
+        'walker_profile_preflight_mismatch: esperado approved/available/accepting, obtido ' +
+          JSON.stringify(wp)
+      );
+    }
   }
   return { id, email };
 }
