@@ -549,17 +549,25 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
       await test.step("heading → arrived via 'Cheguei no Local' (GPS real do browser)", async () => {
         const arriveBtn = walkerPage!.getByRole('button', { name: /Cheguei no Local/i });
         await expect(arriveBtn).toBeVisible({ timeout: 30000 });
+
+        // A resposta HTTP real é capturada via waitForResponse ARMADO ANTES do clique.
+        // WalkDetails.handleArrive executa window.location.reload() imediatamente após
+        // data === true, o que pode correr contra o observer genérico assíncrono
+        // (rpcCalls/lastRpc) e perder o body antes do reload — mesma corrida já
+        // corrigida para petwalker_confirm_pickup no Patch D.
+        const arriveResponsePromise = walkerPage!.waitForResponse(
+          (res) =>
+            res.url().includes('/rest/v1/rpc/petwalker_arrive_pickup') &&
+            res.request().method() === 'POST',
+          { timeout: 20000 }
+        );
+
         await arriveBtn.click();
 
-        await expect
-          .poll(
-            () => {
-              const rpc = lastRpc('petwalker_arrive_pickup');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
-            },
-            { timeout: 20000, message: 'petwalker_arrive_pickup HTTP 200 + true' }
-          )
-          .toBeTruthy();
+        const arriveResponse = await arriveResponsePromise;
+        expect(arriveResponse.status()).toBe(200);
+        const arriveBody = await arriveResponse.json();
+        expect(arriveBody).toBe(true);
 
         await expect
           .poll(
