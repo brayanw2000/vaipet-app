@@ -419,12 +419,18 @@ const SearchWalk = () => {
     })();
   }, [searchParams, user, setSearchParams, commitUserLocation, userLocation]);
 
-  // ---------- AUTO-RECOVERY de sessão `searching` no mount/reload ----------
-  // Se o Owner recarregar /search-walk enquanto existe uma sessão `searching`
-  // real (criada pela própria UI, nunca inserida por teste/admin), o banco
-  // continua sendo a autoridade: rediscovery a MESMA sessão do usuário
-  // autenticado e restaura a tela de espera SEM nenhuma ação do usuário e
-  // SEM chamar create_walk_request. O escopo é NARROW: apenas `searching`.
+  // ---------- AUTO-RECOVERY de sessão `searching`/`accepted` no mount/reload ----------
+  // Se o Owner recarregar /search-walk enquanto existe uma sessão real
+  // `searching` ou `accepted` (criada pela própria UI, nunca inserida por
+  // teste/admin), o banco continua sendo a autoridade: redescobre a MESMA
+  // sessão do usuário autenticado e restaura a UI SEM nenhuma ação do usuário
+  // e SEM chamar create_walk_request.
+  // - `searching` (comportamento certificado 4.5A1, inalterado): restaura a
+  //   tela de espera (waiting) diretamente.
+  // - `accepted`: apenas semeia `currentSessionId` e deixa o efeito canônico
+  //   de sincronização de status buscar a linha completa, promover via
+  //   handleAccepted e hidratar o PetWalker real. Nenhuma promoção eager de
+  //   apresentação nem consulta duplicada de perfil.
   // As dependências são IDENTIDADES ESCALARES ESTÁVEIS (user.id e o valor
   // `resume`), não os objetos contêineres: um refresh do contexto de auth que
   // troque o objeto `user` mantendo o MESMO id, ou um rerender que produza
@@ -441,17 +447,26 @@ const SearchWalk = () => {
           .from('walk_sessions')
           .select('id, current_status')
           .eq('customer_id', recoveryUserId)
-          .eq('current_status', 'searching')
+          .in('current_status', ['searching', 'accepted'])
           .maybeSingle();
-        // Fail closed: erro ou ausência de sessão → permanece idle. Nunca
-        // fabrica estado de espera nem cria uma nova solicitação sozinho.
-        // `cancelled` impede setState após unmount/cleanup do efeito.
+        // Fail closed: erro, ausência de sessão ou múltiplas sessões
+        // (maybeSingle) → permanece idle. Nunca fabrica estado de espera nem
+        // cria uma nova solicitação sozinho. `cancelled` impede setState após
+        // unmount/cleanup do efeito.
         if (cancelled || error || !session) return;
-        setCurrentSessionId(session.id);
-        setSessionStatus('searching');
-        setSearchStatus('waiting');
+        if (session.current_status === 'searching') {
+          // Comportamento certificado 4.5A1: tela de espera restaurada.
+          setCurrentSessionId(session.id);
+          setSessionStatus('searching');
+          setSearchStatus('waiting');
+        } else if (session.current_status === 'accepted') {
+          // Só redescobre a sessão: o efeito canônico de sync de status
+          // (currentSessionId) busca a linha completa e promove via
+          // handleAccepted — sem promoção eager nem hidratação duplicada.
+          setCurrentSessionId(session.id);
+        }
       } catch (e) {
-        console.error('[SearchWalk] auto-recovery searching failed:', e);
+        console.error('[SearchWalk] auto-recovery searching/accepted failed:', e);
         // Fail closed: mantém idle; nenhuma sessão nova é criada.
       }
     })();
