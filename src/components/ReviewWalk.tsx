@@ -330,6 +330,8 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
                   onMouseEnter={() => setHoveredRating(star)}
                   onMouseLeave={() => setHoveredRating(0)}
                   className="p-1 transition-transform active:scale-90"
+                  data-testid={`review-star-${star}`}
+                  aria-label={`${star} ${star === 1 ? 'estrela' : 'estrelas'}`}
                 >
                   <Star
                     className={`w-8 h-8 transition-all ${active ? 'fill-yellow-400 text-yellow-400' : ''}`}
@@ -356,6 +358,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
             rows={2}
             className="rounded-2xl resize-none text-sm"
             style={{ background: cardBg, border: `1px solid ${hairline}`, color: ink }}
+            data-testid="review-comment"
           />
         </div>
 
@@ -366,6 +369,7 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
             disabled={isSubmitting || rating === 0}
             className="w-full py-4 rounded-full font-semibold text-sm tracking-wide text-white transition-all active:scale-[0.98] disabled:opacity-30"
             style={{ background: '#31d880', boxShadow: '0 6px 18px -6px rgba(49,216,128,0.55)' }}
+            data-testid="review-submit"
           >
             {isSubmitting ? 'Enviando…' : 'Enviar avaliação'}
           </button>

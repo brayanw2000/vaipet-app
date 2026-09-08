@@ -64,6 +64,7 @@ const WalkHistory: React.FC = () => {
     <div
       className="min-h-screen max-w-md mx-auto pb-12"
       style={{ background: PAPER, color: INK, fontFamily: 'DM Sans, sans-serif' }}
+      data-testid="owner-history-screen"
     >
       {/* Top bar */}
       <div className="px-5 pt-6 pb-2 flex items-center justify-between">
@@ -173,6 +174,7 @@ const WalkHistory: React.FC = () => {
                   onClick={() => navigate(`/historico/${walk.id}`)}
                   className="w-full flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
                   style={{ background: PAPER, border: `1px solid ${INK}1A`, borderRadius: 22, padding: 12 }}
+                  data-testid={`owner-history-walk-${walk.id}`}
                 >
                   <div
                     className="w-[60px] h-[60px] rounded-2xl flex-shrink-0 overflow-hidden flex items-center justify-center"

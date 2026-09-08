@@ -32,7 +32,7 @@ const PetwalkerHistorico = () => {
 
   return (
     <PetwalkerProtectedRoute>
-      <div className="min-h-screen bg-[#F7F5EF] pb-24">
+      <div className="min-h-screen bg-[#F7F5EF] pb-24" data-testid="walker-history-screen">
         <Header />
         <div className="p-6 max-w-lg mx-auto">
           <h1 className="text-2xl font-bold mb-6">Histórico de Passeios</h1>
@@ -47,7 +47,7 @@ const PetwalkerHistorico = () => {
               </div>
             ) : (
               walks.map(walk => (
-                <div key={walk.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div key={walk.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100" data-testid={`walker-history-walk-${walk.id}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
