@@ -237,10 +237,30 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
       .single();
     if (sErr) throw new Error(`route_select_failed: ${JSON.stringify(sErr)}`);
     const raw = session.route_coordinates;
-    if (!Array.isArray(raw)) throw new Error('route_coordinates_unexpected_format');
-    const routeCoordinates: [number, number][] = raw
-      .filter((c: any) => Array.isArray(c) && c.length >= 2)
-      .map((c: any) => [Number(c[0]), Number(c[1])]);
+    // route_coordinates is nullable JSONB with no default: a UI-created session
+    // legitimately has NULL until the first in_progress GPS trail point is
+    // persisted (the backend helper treats NULL as the valid empty route).
+    // Only explicit null maps to []; every other non-null format must be a
+    // well-formed array or the audit fails closed.
+    let routeCoordinates: [number, number][];
+    if (raw === null) {
+      routeCoordinates = [];
+    } else {
+      if (!Array.isArray(raw)) {
+        throw new Error(`route_coordinates_unexpected_format: ${JSON.stringify(raw)}`);
+      }
+      routeCoordinates = raw.map((c: unknown) => {
+        if (
+          !Array.isArray(c) ||
+          c.length < 2 ||
+          !Number.isFinite(Number(c[0])) ||
+          !Number.isFinite(Number(c[1]))
+        ) {
+          throw new Error(`route_coordinate_invalid: ${JSON.stringify(c)}`);
+        }
+        return [Number(c[0]), Number(c[1])] as [number, number];
+      });
+    }
     return {
       trackingCount: rows ? rows.length : 0,
       routeLen: routeCoordinates.length,
