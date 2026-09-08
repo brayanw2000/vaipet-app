@@ -397,6 +397,19 @@ const SearchWalk = () => {
           setSearchStatus('reviewing');
           return;
         }
+        // walk_sessions.current_status é a AUTORIDADE. O cache local
+        // (vaipet_walk_phase_<sessionId>) é apenas apresentação e pode estar
+        // obsoleto (ex.: 'pickup'/'arrived' de um mount anterior, antes de o
+        // PetWalker confirmar o PIN em OUTRO browser). Um cache obsoleto NUNCA
+        // pode dominar um estado backend retomado: normaliza a fase visual para
+        // 'walking' em in_progress/returning, garantindo que o CTA
+        // "Voltar para casa" (request-return-button) seja renderizado.
+        if (
+          session.current_status === 'in_progress' ||
+          session.current_status === 'returning'
+        ) {
+          sessionStorage.setItem(`vaipet_walk_phase_${session.id}`, 'walking');
+        }
         setSearchStatus('walking');
       } catch (e) {
         console.error('Resume walk failed:', e);
