@@ -269,9 +269,6 @@ const SearchWalk = () => {
   // Resume walk state.
   const [isResuming, setIsResuming] = useState<boolean>(() => !!searchParams.get('resume'));
   const resumeHandledRef = useRef(false);
-  // Auto-recovery (mount/reload) de uma sessão `searching` existente: roda
-  // UMA vez por mount e impede consultas duplicadas em cascata.
-  const searchingRecoveryRef = useRef(false);
   // Return phase state — estados EXCLUSIVAMENTE de loading. A autoridade do
   // domínio (returning/completed) vive em `sessionStatus`.
   const [isRequestingReturn, setIsRequestingReturn] = useState(false);
@@ -428,19 +425,22 @@ const SearchWalk = () => {
   // continua sendo a autoridade: rediscovery a MESMA sessão do usuário
   // autenticado e restaura a tela de espera SEM nenhuma ação do usuário e
   // SEM chamar create_walk_request. O escopo é NARROW: apenas `searching`.
+  // As dependências são IDENTIDADES ESCALARES ESTÁVEIS (user.id e o valor
+  // `resume`), não os objetos contêineres: um refresh do contexto de auth que
+  // troque o objeto `user` mantendo o MESMO id, ou um rerender que produza
+  // outro objeto URLSearchParams com o MESMO valor `resume`, NÃO cancela a
+  // consulta pendente nem desabilita a recuperação para o mount.
+  const recoveryUserId = user?.id ?? null;
+  const explicitResumeId = searchParams.get('resume');
   useEffect(() => {
-    if (!user || searchingRecoveryRef.current) return;
-    // O fluxo explícito ?resume= (in_progress/returning/completed) é dono do
-    // mount quando presente — a recuperação automática não pode competir.
-    if (searchParams.get('resume')) return;
-    searchingRecoveryRef.current = true;
+    if (!recoveryUserId || explicitResumeId) return;
     let cancelled = false;
     (async () => {
       try {
         const { data: session, error } = await supabase
           .from('walk_sessions')
           .select('id, current_status')
-          .eq('customer_id', user.id)
+          .eq('customer_id', recoveryUserId)
           .eq('current_status', 'searching')
           .maybeSingle();
         // Fail closed: erro ou ausência de sessão → permanece idle. Nunca
@@ -459,7 +459,7 @@ const SearchWalk = () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, searchParams]);
+  }, [recoveryUserId, explicitResumeId]);
 
   useEffect(() => {
     let watchId: number;
