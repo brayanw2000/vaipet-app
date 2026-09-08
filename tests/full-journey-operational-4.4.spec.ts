@@ -550,24 +550,30 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         const arriveBtn = walkerPage!.getByRole('button', { name: /Cheguei no Local/i });
         await expect(arriveBtn).toBeVisible({ timeout: 30000 });
 
-        // A resposta HTTP real é capturada via waitForResponse ARMADO ANTES do clique.
-        // WalkDetails.handleArrive executa window.location.reload() imediatamente após
-        // data === true, o que pode correr contra o observer genérico assíncrono
-        // (rpcCalls/lastRpc) e perder o body antes do reload — mesma corrida já
-        // corrigida para petwalker_confirm_pickup no Patch D.
+        // Prova reload-safe (Patch F): WalkDetails.handleArrive executa
+        // window.location.reload() IMEDIATAMENTE após data === true. O reload pode
+        // destruir o recurso de rede antes de response.json() (Network.getResponseBody
+        // → "No resource with given identifier found"). Portanto NÃO lemos o body aqui.
+        // O sucesso é provado por: HTTP 200 (request real) + reload real (o reload só
+        // ocorre no branch de sucesso data === true) + DB arrived (abaixo).
         const arriveResponsePromise = walkerPage!.waitForResponse(
           (res) =>
             res.url().includes('/rest/v1/rpc/petwalker_arrive_pickup') &&
             res.request().method() === 'POST',
           { timeout: 20000 }
         );
+        // waitForNavigation também ARMADO ANTES do clique: captura o reload do branch
+        // de sucesso (data === true) executado pelo WalkDetails.handleArrive.
+        const arriveReloadPromise = walkerPage!.waitForNavigation({
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
 
         await arriveBtn.click();
 
         const arriveResponse = await arriveResponsePromise;
         expect(arriveResponse.status()).toBe(200);
-        const arriveBody = await arriveResponse.json();
-        expect(arriveBody).toBe(true);
+        await arriveReloadPromise;
 
         await expect
           .poll(
@@ -619,24 +625,30 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         const submitBtn = walkerPage!.getByTestId('pickup-pin-submit');
         await expect(submitBtn).toBeEnabled({ timeout: 10000 });
 
-        // A resposta HTTP real é capturada via waitForResponse ARMADO ANTES do clique.
-        // WalkDetails.handleConfirmPickup executa window.location.reload() imediatamente
-        // após data === true, o que pode correr contra o observer genérico assíncrono
-        // (rpcCalls/lastRpc) e perder o body antes do reload. O waitForResponse escuta
-        // o evento de response diretamente e sobrevive à navegação.
+        // Prova reload-safe (Patch F): WalkDetails.handleConfirmPickup executa
+        // window.location.reload() IMEDIATAMENTE após data === true — mesmo risco de
+        // Network.getResponseBody ("No resource with given identifier found") já
+        // eliminado para petwalker_arrive_pickup. NÃO lemos o body após o reload.
+        // O sucesso é provado por: HTTP 200 (request real) + reload real (só ocorre
+        // no branch de sucesso data === true) + DB in_progress + UI walk-in-progress-marker.
         const confirmPickupResponsePromise = walkerPage!.waitForResponse(
           (res) =>
             res.url().includes('/rest/v1/rpc/petwalker_confirm_pickup') &&
             res.request().method() === 'POST',
           { timeout: 20000 }
         );
+        // waitForNavigation também ARMADO ANTES do clique: captura o reload do branch
+        // de sucesso (data === true) executado pelo WalkDetails.handleConfirmPickup.
+        const confirmPickupReloadPromise = walkerPage!.waitForNavigation({
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
 
         await submitBtn.click();
 
         const confirmPickupResponse = await confirmPickupResponsePromise;
         expect(confirmPickupResponse.status()).toBe(200);
-        const confirmPickupBody = await confirmPickupResponse.json();
-        expect(confirmPickupBody).toBe(true);
+        await confirmPickupReloadPromise;
 
         await expect
           .poll(
