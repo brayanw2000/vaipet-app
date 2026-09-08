@@ -199,21 +199,21 @@ export const ReviewWalk: React.FC<ReviewWalkProps> = ({ onBack, onComplete, petN
     if (rating === 0) { toast({ title: 'Avaliação necessária', description: 'Selecione de 1 a 5 estrelas.', variant: 'destructive' }); return; }
     setIsSubmitting(true);
     try {
-      // FAIL CLOSED real: sucesso SOMENTE com evidência factual da linha
-      // atualizada (id === sessionId). Sem sessionId, com error, ou sem
-      // retorno da linha — permanece na tela com toast de erro.
+      // FAIL CLOSED real: sucesso SOMENTE com evidência factual do RPC de
+      // avaliação (customer_submit_walk_review). A escrita direta na tabela é
+      // bloqueada por RLS — a persistência é feita por RPC SECURITY DEFINER
+      // dedicada, que só altera rating/feedback e só em sessão completed.
       if (!sessionId) {
         console.error('[ReviewWalk] Falha ao enviar avaliação: sessionId ausente.');
         toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
         return;
       }
-      const { data, error } = await supabase
-        .from('walk_sessions')
-        .update({ rating, feedback: comment || null })
-        .eq('id', sessionId)
-        .select('id, rating, feedback')
-        .maybeSingle();
-      if (error || !data || data.id !== sessionId || Number(data.rating) !== rating) {
+      const { data, error } = await supabase.rpc('customer_submit_walk_review', {
+        _session_id: sessionId,
+        _rating: rating,
+        _feedback: comment || null,
+      });
+      if (error || data !== true) {
         console.error('[ReviewWalk] Falha ao confirmar avaliação no backend:', { error, data });
         toast({ title: 'Erro ao enviar avaliação', description: 'Tente novamente.', variant: 'destructive' });
         return;

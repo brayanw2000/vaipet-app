@@ -1360,6 +1360,14 @@ export type Database = {
         Args: { _session_id: string }
         Returns: boolean
       }
+      customer_submit_walk_review: {
+        Args: {
+          _session_id: string
+          _rating: number
+          _feedback: string | null
+        }
+        Returns: boolean
+      }
       customer_get_pickup_code: {
         Args: { _session_id: string }
         Returns: string

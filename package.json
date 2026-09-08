@@ -24,6 +24,7 @@
     "test:e2e:phase43:operational": "playwright test tests/completion-operational-4.3.spec.ts",
     "test:e2e:phase44:blocker": "playwright test tests/arrival-blocker-4.4.spec.ts",
     "test:e2e:phase44:operational": "playwright test tests/full-journey-operational-4.4.spec.ts",
+    "test:e2e:phase44:review-security": "playwright test tests/review-security-4.4.spec.ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
 
   },

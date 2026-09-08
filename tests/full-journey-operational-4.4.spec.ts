@@ -322,6 +322,7 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         armRpcObserver(ownerPage, 'customer_request_return');
         armRpcObserver(ownerPage, 'customer_confirm_arrival');
         armRpcObserver(ownerPage, 'get_active_walker_location');
+        armRpcObserver(ownerPage, 'customer_submit_walk_review');
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
         armRpcObserver(walkerPage, 'petwalker_arrive_pickup');
@@ -908,9 +909,23 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
         const comment = `Phase 4.4 E2E review ${runId}`;
         await ownerPage!.getByTestId('review-star-5').click();
         await ownerPage!.getByTestId('review-comment').fill(comment);
-        await ownerPage!.getByTestId('review-submit').click();
 
-        // Persistência factual na MESMA sessão (nunca via admin para escrever).
+        // Prova RPC (camada 1): observador limpo ANTES do clique — a UI deve
+        // chamar customer_submit_walk_review e receber HTTP 200 + body true.
+        rpcCalls['customer_submit_walk_review'] = [];
+        await ownerPage!.getByTestId('review-submit').click();
+        await expect
+          .poll(
+            () => {
+              const rpc = lastRpc('customer_submit_walk_review');
+              return !!(rpc && rpc.status === 200 && rpc.body === true);
+            },
+            { timeout: 20000, message: 'customer_submit_walk_review HTTP 200 + true via UI' }
+          )
+          .toBeTruthy();
+
+        // Persistência factual na MESMA sessão (camada 2, via admin — prova
+        // independente da observação RPC; nunca via admin para escrever).
         await expect
           .poll(
             async () => {
