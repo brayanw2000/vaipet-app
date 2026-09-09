@@ -447,7 +447,7 @@ const SearchWalk = () => {
           .from('walk_sessions')
           .select('id, current_status')
           .eq('customer_id', recoveryUserId)
-          .in('current_status', ['searching', 'accepted'])
+          .in('current_status', ['searching', 'accepted', 'heading_to_pickup'])
           .maybeSingle();
         // Fail closed: erro, ausência de sessão ou múltiplas sessões
         // (maybeSingle) → permanece idle. Nunca fabrica estado de espera nem
@@ -459,14 +459,17 @@ const SearchWalk = () => {
           setCurrentSessionId(session.id);
           setSessionStatus('searching');
           setSearchStatus('waiting');
-        } else if (session.current_status === 'accepted') {
+        } else if (
+          session.current_status === 'accepted' ||
+          session.current_status === 'heading_to_pickup'
+        ) {
           // Só redescobre a sessão: o efeito canônico de sync de status
           // (currentSessionId) busca a linha completa e promove via
           // handleAccepted — sem promoção eager nem hidratação duplicada.
           setCurrentSessionId(session.id);
         }
       } catch (e) {
-        console.error('[SearchWalk] auto-recovery searching/accepted failed:', e);
+        console.error('[SearchWalk] auto-recovery searching/accepted/heading_to_pickup failed:', e);
         // Fail closed: mantém idle; nenhuma sessão nova é criada.
       }
     })();
