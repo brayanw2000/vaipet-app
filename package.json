@@ -28,6 +28,7 @@
     "test:e2e:phase45a:owner-searching-recovery": "playwright test tests/owner-searching-recovery-4.5a.spec.ts",
     "test:e2e:phase45a:owner-accepted-recovery": "playwright test tests/owner-accepted-recovery-4.5a.spec.ts",
     "test:e2e:phase45a:owner-heading-to-pickup-recovery": "playwright test tests/owner-heading-to-pickup-recovery-4.5a.spec.ts",
+    "test:e2e:phase45a:owner-arrived-recovery": "playwright test tests/owner-arrived-recovery-4.5a.spec.ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
 
   },
