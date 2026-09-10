@@ -354,6 +354,29 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
     setPhase('arrived');
   }, [sessionStatus]);
 
+  // DOMAIN AUTHORITY → apresentação (sync de in_progress/returning): quando
+  // o backend real (SearchWalk.sessionStatus — fonte canônica de
+  // walk_sessions.current_status) já avançou para um estado ativo de caminha-
+  // da, uma fase de apresentação ANTIGA (pickup/arrived retida em componente
+  // montado que perdeu eventos de rede/realtime) NUNCA pode vencer o domínio.
+  // Idempotente: já estando 'walking', nada é re-setado; a persistência
+  // existente (vaipet_walk_phase_<sessionId>) grava 'walking' por seu próprio
+  // efeito — nenhum segundo escritor de storage é adicionado. `returning` é
+  // coberto porque isReturning deriva de sessionStatus === 'returning' — a
+  // apresentação de retorno existente continua autoritativa; NÃO é criada uma
+  // fase local 'returning'. accepted/heading_to_pickup NÃO promovem a
+  // 'walking'; completed permanece no fluxo reviewing do SearchWalk.
+  useEffect(() => {
+    if (
+      sessionStatus !== 'in_progress' &&
+      sessionStatus !== 'returning'
+    ) return;
+
+    if (phaseRef.current === 'walking') return;
+
+    setPhase('walking');
+  }, [sessionStatus]);
+
   // Haversine distance in meters between two [lng,lat] points
   const haversine = (a: [number, number], b: [number, number]) => {
     const R = 6371000;
