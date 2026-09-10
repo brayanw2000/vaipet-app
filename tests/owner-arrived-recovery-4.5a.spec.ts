@@ -115,9 +115,22 @@
  * O reload REAL do produto continua normalmente. Nada é mockado: nem GPS,
  * nem RPC, nem resposta — e a exigência factual HTTP 200 + body true +
  * backend arrived permanece inalterada.
+ *
+ * PATCH T6 — OBSERVADOR IN-PAGE DO BODY REAL (remove o race de CDP):
+ * A retenção do documento (T5) não bastou: o recurso de resposta do protocolo
+ * CDP é descartado pela navegação imediata. A autoridade ÚNICA do body passa a
+ * ser o PRÓPRIO renderer: exposeBinding + addInitScript (antes de qualquer JS
+ * do app) instalam um wrapper TRANSPARENTES de window.fetch — para a RPC de
+ * chegada apenas, executa o fetch nativo ORIGINAL, clona a resposta REAL
+ * (response.clone()), lê o clone, entrega os fatos SEGUROS (status + body +
+ * pathname) ao Node e devolve a Response ORIGINAL intocada ao app. O binding
+ * é aguardado antes de retornar a Response — a evidência existe antes do
+ * reload do produto, que agora executa SEM nenhuma retenção (T5 removido).
+ * Zero leitores CDP do body da chegada (res.text/json/body); o observador
+ * genérico continua NÃO armado para esta RPC. Nada é mockado.
  */
 
-import { test, expect, type BrowserContext, type ConsoleMessage, type Page, type Request, type Response, type Route } from '@playwright/test';
+import { test, expect, type BrowserContext, type ConsoleMessage, type Page, type Request, type Response } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { failClosedCleanup } from './helpers/cleanup';
 
@@ -294,79 +307,19 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
     return calls[calls.length - 1];
   };
 
-  // ——— T3: observabilidade factual e SEGURA do caminho de chegada ———
-  // Escopo restrito a /rest/v1/rpc/petwalker_arrive_pickup. Nada de headers,
-  // authorization ou chaves é capturado/logado.
-  let detachArriveObservers: () => void = () => {};
-  // T5: sinal de captura do body REAL da chegada — resolvido pelo ÚNICO leitor
-  // canônico (no finally) para liberar a barreira temporária do reload do
-  // produto. Nunca bloqueia para sempre: fail-safe no teste.
-  let arrivalBodyCaptureFinished: (() => void) | null = null;
-  const arrivalBodyCaptureFinishedPromise = new Promise<void>((resolve) => {
-    arrivalBodyCaptureFinished = resolve;
-  });
-  // T5: barreira temporária de sincronização em torno do ÚNICO reload de
-  // DOCUMENTO SAME-WalkDetails disparado pelo PRÓPRIO produto
-  // (window.location.reload() após data === true). A URL-predicate deixa
-  // chegar ao handler APENAS requisições do pathname do WalkDetails; o
-  // handler ainda exige isNavigationRequest + resourceType 'document' +
-  // pathname idêntico + clique de chegada já realizado. Nada é interceptado,
-  // mockado, fulfillado ou substituído — o handler apenas RETÉM o documento
-  // (sem responder) até a captura factual do body REAL da RPC e então o
-  // libera com route.fallback(). O RPC do Supabase viaja normalmente.
-  const HOLD_FAILSAFE_MS = 10_000;
-  let reloadHoldArmed = false;
-  let holdPathname = '';
-  let productReloadHeldNotify: (() => void) | null = null;
-  const walkerReloadHoldPredicate = (url: URL) =>
-    reloadHoldArmed && !!holdPathname && url.pathname === holdPathname;
-  const reloadHoldHandler = async (route: Route) => {
-    const req = route.request();
-    const isSameDocReload =
-      req.isNavigationRequest() &&
-      req.resourceType() === 'document' &&
-      new URL(req.url()).pathname === holdPathname;
-    if (!isSameDocReload) {
-      // Defesa em profundidade: nada além do reload do documento passa por
-      // aqui (incluindo qualquer fetch/XHR/API — seguem imediatamente).
-      await route.fallback().catch(() => {});
-      return;
-    }
-    arriveObs.productReloadObserved = true;
-    arriveObs.productReloadHeld = true;
-    log('ARRIVE_PRODUCT_RELOAD_HELD=true (reload REAL do produto retido até a captura do body)');
-    productReloadHeldNotify?.();
-    // Espera limitada pela captura factual — nunca um deadlock: se o leitor
-    // único falhar/sinalizar, a barreira cai; se nada sinalizar, o fail-safe
-    // libera o documento após HOLD_FAILSAFE_MS.
-    await Promise.race([
-      arrivalBodyCaptureFinishedPromise,
-      new Promise((r) => setTimeout(r, HOLD_FAILSAFE_MS)),
-    ]);
-    log('ARRIVE_PRODUCT_RELOAD_FALLBACK=true (reload REAL do produto prossegue)');
-    await route.fallback().catch(() => {
-      log('ARRIVE_PRODUCT_RELOAD_FALLBACK_FAILED (contexto pode ter encerrado a navegação)');
-    });
-  };
-  /** Libera a barreira T5 e remove o handler — idempotente e com fail-safe
-   * limitado; chamada no finally do passo de chegada e no cleanup. */
-  const releaseProductReloadHold = async () => {
-    if (!reloadHoldArmed) return;
-    reloadHoldArmed = false;
-    await Promise.race([
-      arrivalBodyCaptureFinishedPromise,
-      new Promise((r) => setTimeout(r, HOLD_FAILSAFE_MS)),
-    ]);
-    productReloadHeldNotify = null;
-    arriveObs.productReloadReleased = true;
-    log('ARRIVE_PRODUCT_RELOAD_RELEASED=true');
-    try {
-      await walkerPage!.unroute(walkerReloadHoldPredicate, reloadHoldHandler);
-      log('T5: barreira de reload removida (unroute)');
-    } catch {
-      /* página/contexto já encerrados em falha anterior */
-    }
-  };
+  // ——— T6: observador IN-PAGE do body REAL da chegada (sem CDP race) ———
+  // O window.location.reload() imediato do produto (após data === true)
+  // torna o recurso de resposta do protocolo CDP não confiável
+  // ("Network.getResponseBody: No resource with given identifier found" —
+  // fatos T4/T5, mesmo com o reload retido). A autoridade ÚNICA do body passa
+  // a ser o PRÓPRIO renderer: um wrapper transparente de window.fetch
+  // (instalado via addInitScript ANTES de qualquer JS do app) clona a resposta
+  // REAL da RPC de chegada, lê o clone, envia os fatos SEGUROS (status + body
+  // parseado + pathname — sem headers/tokens) via exposeBinding e devolve a
+  // Response ORIGINAL intocada ao Supabase. Nada é mockado, alterado ou
+  // substituído: request original → fetch nativo original → resposta real →
+  // clone observado → resposta original retornada.
+  const ARRIVE_RPC_BINDING = '__E2E_REPORT_ARRIVE_RPC__';
   const arriveObs = {
     requestSeen: false,
     requestFailed: null as string | null,
@@ -375,11 +328,93 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
     handlerEntryObserved: false,
     pageErrors: [] as string[],
     consoleErrors: [] as string[],
-    // T5: fatos factuais sobre o reload do PRÓPRIO produto (sem headers).
-    productReloadObserved: false,
-    productReloadHeld: false,
-    productReloadReleased: false,
+    // T6: fatos factuais da observação in-page (sem headers).
+    fetchCloneObserved: false,
+    fetchCloneStatus: null as number | null,
+    fetchCloneFrame: '' as string,
+    fetchCloneObservations: 0,
   };
+
+  /** Instala exposeBinding + addInitScript no BrowserContext do Walker, ANTES
+   * da criação da página e de qualquer JS do app. O binding recebe apenas
+   * fatos serializados seguros (status + body parseado + pathname — nunca
+   * headers/authorization/apikey/cookies) e popula a autoridade canônica do
+   * teste (rpcCalls + arriveObs). ESCOPO/FRAME SAFETY: apenas o frame principal
+   * da página do Walker é aceito. */
+  const armInPageArriveObserver = async (ctx: BrowserContext) => {
+    await ctx.exposeBinding(ARRIVE_RPC_BINDING, async (source, payload: unknown) => {
+      // Apenas o frame principal da página do Walker (ignora iframes).
+      if (!walkerPage || source.page !== walkerPage || source.frame !== walkerPage.mainFrame()) {
+        log('ARRIVE_FETCH_CLONE_IGNORED (frame não principal/página não-Walker)');
+        return { ok: false, reason: 'ignored_frame' };
+      }
+      const p = (payload || {}) as { status?: unknown; body?: unknown; pathname?: unknown };
+      const status = typeof p.status === 'number' ? p.status : null;
+      const pathname = typeof p.pathname === 'string' ? p.pathname : '';
+      // pathname EXATO da RPC de chegada — nada mais é aceito.
+      if (pathname !== '/rest/v1/rpc/petwalker_arrive_pickup' || status === null) {
+        return { ok: false, reason: 'not_arrive_rpc' };
+      }
+      arriveObs.fetchCloneObservations += 1;
+      arriveObs.fetchCloneObserved = true;
+      arriveObs.fetchCloneStatus = status;
+      arriveObs.fetchCloneFrame = 'main';
+      arriveObs.responseStatus = status;
+      arriveObs.responseBody = p.body;
+      rpcCalls['petwalker_arrive_pickup'] = rpcCalls['petwalker_arrive_pickup'] || [];
+      rpcCalls['petwalker_arrive_pickup'].push({ status, body: p.body });
+      log(`ARRIVE_FETCH_CLONE_OBSERVED HTTP ${status} body=${JSON.stringify(p.body)}`);
+      log(`RPC_OBSERVED petwalker_arrive_pickup HTTP ${status} body=${JSON.stringify(p.body)}`);
+      return { ok: true };
+    });
+    // addInitScript roda ANTES de qualquer JS do app, em todo novo documento.
+    await ctx.addInitScript(
+      `(() => {
+        const RPC_PATH = '/rest/v1/rpc/petwalker_arrive_pickup';
+        const BINDING = '${ARRIVE_RPC_BINDING}';
+        if (window.__e2eArriveFetchWrapperInstalled) return;
+        window.__e2eArriveFetchWrapperInstalled = true;
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = async (input, init) => {
+          let pathname = '';
+          try {
+            const u = typeof input === 'string'
+              ? new URL(input, window.location.href)
+              : (input && input.url) ? new URL(input.url, window.location.href) : null;
+            pathname = u ? u.pathname : '';
+          } catch { pathname = ''; }
+          // Qualquer outra requisição: fetch nativo direto, custo zero.
+          if (pathname !== RPC_PATH) return nativeFetch(input, init);
+          // RPC de chegada: executa o fetch REAL original com input/init
+          // ORIGINAL e recebe a Response REAL.
+          const response = await nativeFetch(input, init);
+          try {
+            const observationClone = response.clone();
+            const cloneText = await observationClone.text();
+            let parsed;
+            try { parsed = JSON.parse(cloneText); } catch { parsed = 'NON_JSON'; }
+            // Aguarda a entrega dos fatos no Node ANTES de devolver a Response
+            // original ao app — a evidência existe antes do reload do produto.
+            await window[BINDING]({ status: response.status, body: parsed, pathname });
+          } catch (obsErr) {
+            const msg = obsErr && obsErr.message ? String(obsErr.message) : String(obsErr);
+            try {
+              await window[BINDING]({ status: response.status, body: 'OBSERVATION_FAILED: ' + msg, pathname });
+            } catch { /* binding indisponível */ }
+            console.error('e2e_arrive_observation_failed:', msg);
+          }
+          // Devolve a Response ORIGINAL, intocada, ao Supabase/app.
+          return response;
+        };
+      })()`
+    );
+    log(`T6: observador in-page armado (exposeBinding ${ARRIVE_RPC_BINDING} + addInitScript fetch wrapper)`);
+  };
+
+  // ——— T3: observabilidade factual e SEGURA do caminho de chegada ———
+  // Escopo restrito a /rest/v1/rpc/petwalker_arrive_pickup. Nada de headers,
+  // authorization ou chaves é capturado/logado.
+  let detachArriveObservers: () => void = () => {};
 
   /** Instala os observadores T3 na página do Walker: request, requestfailed,
    * resposta factual, pageerror e console de erro filtrado — escopo restrito à
@@ -397,53 +432,14 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
       arriveObs.requestFailed = req.failure()?.errorText ?? 'unknown';
       log(`ARRIVE_REQUESTFAILED: ${arriveObs.requestFailed}`);
     };
-    // 3) resposta factual da RPC de chegada — ÚNICO leitor canônico do body
-    // (PATCH T5): o produto executa window.location.reload() imediatamente
-    // quando data === true, e o Chromium pode descartar o recurso da resposta
-    // durante a navegação ("Network.getResponseBody: No resource with given
-    // identifier found") — por isso a espera por response.finished() NÃO
-    // resolve (T4 factual). Agora: lê o body DIRETAMENTE (o reload do produto
-    // está temporariamente retido pela barreira de sincronização T5), parseia
-    // JSON e registra em rpcCalls — mantendo lastRpc() e todas as asserções.
-    // Continua sendo o ÚNICO leitor; falha de leitura NUNCA vira false.
+    // 3) resposta factual da RPC de chegada — DIAGNÓSTICO APENAS (T6):
+    // NENHUM leitor de body Playwright/CDP (res.text/json/body) existe para
+    // esta RPC — a autoridade ÚNICA do body é a observação in-page (fetch
+    // clone no renderer). Aqui capturamos apenas o STATUS HTTP factual.
     const onResponse = (res: Response) => {
       if (!new URL(res.url()).pathname.includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
       arriveObs.responseStatus = res.status();
-      void (async () => {
-        try {
-          // Leitura direta e única do body real (sem esperar finished():
-          // a navegação do produto está retida até a captura terminar).
-          const t = await res.text();
-          let body: unknown;
-          try {
-            body = JSON.parse(t);
-          } catch {
-            body = 'NON_JSON';
-          }
-          arriveObs.responseBody = body;
-          rpcCalls['petwalker_arrive_pickup'] = rpcCalls['petwalker_arrive_pickup'] || [];
-          rpcCalls['petwalker_arrive_pickup'].push({ status: res.status(), body });
-          // Registro canônico compatível com RPC_OBSERVED (status verbatim —
-          // as asserções continuam exigindo HTTP 200 + body true).
-          log(`RPC_OBSERVED petwalker_arrive_pickup HTTP ${res.status()} body=${JSON.stringify(body)}`);
-        } catch (e) {
-          // Diagnóstico SEGURO (status + message apenas) — sem headers/
-          // authorization/apikey/cookies. NUNCA converte silenciosamente em
-          // false e NUNCA registra como chamada bem-sucedida.
-          const readErrMsg = e instanceof Error ? e.message : String(e);
-          const diag = `BODY_READ_FAILED: read=${readErrMsg}`;
-          arriveObs.responseBody = diag;
-          log(`ARRIVE_RPC_BODY_READ_FAILED HTTP ${res.status()} ${diag}`);
-        } finally {
-          // Sinaliza a captura (sucesso OU falha factual): libera a barreira
-          // T5 para que o reload REAL do produto prossiga.
-          try {
-            arrivalBodyCaptureFinished?.();
-          } catch {
-            /* idempotente */
-          }
-        }
-      })();
+      log(`ARRIVE_RPC_RESPONSE_STATUS HTTP ${res.status()} (body lido in-page via clone — sem leitor CDP)`);
     };
     // 6/F) erro JS da página (apenas a mensagem).
     const onPageError = (err: Error) => {
@@ -493,9 +489,8 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
       `response_body=${arriveObs.responseBody === null ? 'none' : JSON.stringify(arriveObs.responseBody)}`,
       `pageerrors=${arriveObs.pageErrors.length ? JSON.stringify(arriveObs.pageErrors) : 'none'}`,
       `console_errors=${arriveObs.consoleErrors.length ? JSON.stringify(arriveObs.consoleErrors) : 'none'}`,
-      `product_reload_observed=${arriveObs.productReloadObserved}`,
-      `product_reload_held=${arriveObs.productReloadHeld}`,
-      `product_reload_released=${arriveObs.productReloadReleased}`,
+      `fetch_clone_observed=${arriveObs.fetchCloneObserved}`,
+      `fetch_clone_observations=${arriveObs.fetchCloneObservations}`,
     ].join(' | ');
 
   async function auditSession(id: string) {
@@ -573,6 +568,10 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
           permissions: ['geolocation'],
           geolocation: { longitude: MEETING.lng, latitude: MEETING.lat },
         });
+        // T6: observador in-page do body da chegada instalado NO CONTEXT, ANTES
+        // da criação da página e de qualquer JS do app (exposeBinding +
+        // addInitScript cobrem todo novo documento).
+        await armInPageArriveObserver(walkerCtx);
         walkerPage = await walkerCtx.newPage();
         ownerPage = await ownerCtx.newPage();
         await loginViaUi(ownerPage, ownerEmail);
@@ -580,12 +579,12 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         armRpcObserver(ownerPage, 'create_walk_request');
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
-        // T4: o observador genérico NÃO lê mais o body de
-        // petwalker_arrive_pickup — o leitor canônico ÚNICO é o observador
-        // dedicado de chegada (armArriveObservers), que aguarda
-        // response.finished() antes de ler e registra em rpcCalls (compatível
-        // com lastRpc e todas as asserções existentes).
-        armArriveObservers(walkerPage); // T3/T4: observabilidade factual do clique de chegada
+        // T4/T6: o observador genérico NÃO lê o body de petwalker_arrive_pickup
+        // — a autoridade ÚNICA do body é a observação in-page (fetch clone no
+        // renderer, armada acima antes da criação da página). Este observador
+        // externo fica apenas com os fatos T3 de rede/diagnóstico (request,
+        // requestfailed, STATUS HTTP, pageerror, console filtrado).
+        armArriveObservers(walkerPage); // T3: observabilidade factual do clique de chegada
       });
 
       await test.step('owner: criar pedido pela UI REAL (create_walk_request) → searching', async () => {
@@ -873,38 +872,24 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
           }
         })();
 
-        // T5: registra o pathname EXATO do WalkDetails ANTES do clique e arma a
-        // barreira temporária APENAS para o próximo reload de DOCUMENTO desta
-        // MESMA pathname (window.location.reload() do produto). O RPC do
-        // Supabase NUNCA é interceptado; o handler usa fallback() — nada é
-        // mockado, fulfillado ou abortado.
-        holdPathname = new URL(walkerPage!.url()).pathname;
-        expect(holdPathname).toBe(`/petwalker/passeio/${sessionId}`);
-        reloadHoldArmed = true;
-        arriveObs.productReloadObserved = false;
-        arriveObs.productReloadHeld = false;
-        arriveObs.productReloadReleased = false;
-        productReloadHeldNotify = () => {};
-        let resolveHeld: (() => void) | null = null;
-        const heldSignal = new Promise<void>((r) => {
-          resolveHeld = r;
-        });
-        productReloadHeldNotify = () => resolveHeld?.();
-        await walkerPage!.route(walkerReloadHoldPredicate, reloadHoldHandler);
-        log(`T5: barreira de reload armada para ${holdPathname} (documento same-WalkDetails apenas)`);
+        // T6: a pathname EXATA do WalkDetails é verificada (fato pré-clique);
+        // NENHUMA rota é interceptada — o observador in-page (fetch clone no
+        // renderer) captura o body REAL antes do reload do produto, que agora
+        // executa completamente normalmente.
+        const preClickPathnameCheck = new URL(walkerPage!.url()).pathname;
+        expect(preClickPathnameCheck).toBe(`/petwalker/passeio/${sessionId}`);
 
         try {
           // UMA única ação real de usuário: o clique no botão do produto.
           await arriveBtn.click();
-          await Promise.race([processandoProbe, heldSignal, new Promise((r) => setTimeout(r, 4000))]);
-          if (!arriveObs.productReloadHeld) {
-            // Sem reload retido ainda: aguardamos o fechamento factual do
-            // probe de handler-entry ("Processando..." observado ou não).
-            await processandoProbe;
-          }
+          // Aguardamos o fechamento factual do probe de handler-entry
+          // ("Processando..." observado ou não — nunca falha por si só).
+          await processandoProbe;
 
           // Resposta REAL do petwalker_arrive_pickup: HTTP 200 + body true
           // (a RPC retorna boolean: TRUE quando o UPDATE promoveu a sessão).
+          // A autoridade factual é a observação in-page (fetch clone) — o
+          // binding é entregue ANTES de a Response original retornar ao app.
           try {
             await expect
               .poll(
@@ -916,7 +901,7 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
               )
               .toBeTruthy();
           } catch (err) {
-            // T3/T4/T5: falha factual com o relatório completo e SEGURO do
+            // T3/T6: falha factual com o relatório completo e SEGURO do
             // caminho de chegada (sem credenciais/headers).
             throw new Error(
               `${arriveRpcTimeoutDiagnostic(preClickFacts)} | underlying=${err instanceof Error ? err.message : String(err)}`
@@ -924,16 +909,9 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
           }
           log('petwalker_arrive_pickup real observado (HTTP 200 + true, via UI "Cheguei no Local")');
         } finally {
-          // T5 fail-safe: a barreira é SEMPRE liberada — o reload REAL do
-          // produto prossegue mesmo se a captura/asserção falhar.
-          await releaseProductReloadHold();
-        }
-
-        // O reload REAL do produto (window.location.reload()) prossegue
-        // normalmente; o teste apenas OBSERVA (e a espera abaixo é factual —
-        // o reload de fato aconteceu quando a barreira observou o documento).
-        if (arriveObs.productReloadObserved) {
-          log('reload REAL do produto do WalkDetails executado após a chegada');
+          // T6: nenhuma barreira a liberar — o reload REAL do produto sempre
+          // prossegue normalmente (nada é retido). Bloco mantido para
+          // simetria de segurança e futura instrumentação, sem operação.
         }
 
         // Backend: MESMA sessão agora arrived, MESMO Walker.
@@ -1087,8 +1065,6 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
       });
     } finally {
       await test.step('cleanup fail-closed: ZERO resíduos', async () => {
-        // T5: libera (idempotente) a barreira de reload, se ainda armada.
-        await releaseProductReloadHold().catch(() => {});
         // T3: desinstala os observadores de chegada (higiene de listeners).
         if (walkerPage) detachArriveObservers();
         if (walkerCtx) await walkerCtx.close().catch(() => {});
