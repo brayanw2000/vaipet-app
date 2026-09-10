@@ -89,6 +89,18 @@
  * São apenas OBSERVADORES: nenhum comportamento de ciclo de vida é alterado,
  * nenhuma GPS é mockada, nenhuma RPC é invocada manualmente e nenhuma
  * asserção de recuperação é modificada.
+ *
+ * PATCH T4 — OBSERVAÇÃO DO BODY DA CHEGADA SEM RACE (correção de
+ * instrumentação): evidência externa mostrou response_status=200 com
+ * body=BODY_READ_FAILED — dois consumidores (armRpcObserver → res.json() e o
+ * observador T3 → res.text()) disputavam o mesmo body enquanto o produto
+ * recarrega a página imediatamente após data === true. Agora existe UM leitor
+ * canônico do body de petwalker_arrive_pickup: o observador dedicado aguarda
+ * response.finished() e SÓ ENTÃO lê o body uma única vez, parseia JSON e
+ * registra em rpcCalls (compatível com lastRpc/RPC_OBSERVED). O observador
+ * genérico NÃO é mais armado para esta RPC. Diagnóstico de falha de leitura é
+ * SEGURO (status + erro de finished + message apenas). Nenhuma asserção é
+ * enfraquecida: HTTP 200 + body true + backend arrived permanecem obrigatórios.
  */
 
 import { test, expect, type BrowserContext, type ConsoleMessage, type Page, type Request, type Response } from '@playwright/test';
@@ -298,23 +310,58 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
       arriveObs.requestFailed = req.failure()?.errorText ?? 'unknown';
       log(`ARRIVE_REQUESTFAILED: ${arriveObs.requestFailed}`);
     };
-    // 3) resposta factual (status + body seguro) — complementa RPC_OBSERVED.
+    // 3) resposta factual da RPC de chegada — ÚNICO leitor canônico do body
+    // (PATCH T4): captura o status, AGUARDA response.finished() (a resposta
+    // terminar de fato — o produto pode disparar window.location.reload()
+    // imediatamente quando data === true, invalidando leituras prematuras) e
+    // SÓ ENTÃO lê o body uma única vez, parseia JSON e registra em
+    // rpcCalls['petwalker_arrive_pickup'] — mantendo lastRpc() e todas as
+    // asserções de ciclo de vida compatíveis. Nenhum sleep arbitrário.
     const onResponse = (res: Response) => {
       if (!new URL(res.url()).pathname.includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
       arriveObs.responseStatus = res.status();
-      res
-        .text()
-        .then((t) => {
-          try {
-            arriveObs.responseBody = JSON.parse(t);
-          } catch {
-            arriveObs.responseBody = 'NON_JSON';
+      void (async () => {
+        // 1) conclusão factual da resposta (null = ok; Error = diagnóstico).
+        let finishedErrMsg: string | null = null;
+        try {
+          const fin = await res.finished();
+          if (fin) {
+            finishedErrMsg = fin.message || 'finished_error';
+            log(`ARRIVE_RPC_FINISHED_ERROR: ${finishedErrMsg}`);
           }
-          log(`ARRIVE_RPC_RESPONSE HTTP ${res.status()} body=${JSON.stringify(arriveObs.responseBody)}`);
-        })
-        .catch(() => {
-          arriveObs.responseBody = 'BODY_READ_FAILED';
-        });
+        } catch (e) {
+          finishedErrMsg = e instanceof Error ? e.message : String(e);
+          log(`ARRIVE_RPC_FINISHED_ERROR: ${finishedErrMsg}`);
+        }
+        // 2) leitura do body APENAS após a conclusão (uma única leitura).
+        let body: unknown;
+        try {
+          const t = await res.text();
+          // 3) parse JSON factual; falha de parse NÃO é convertida em false.
+          try {
+            body = JSON.parse(t);
+          } catch {
+            body = 'NON_JSON';
+          }
+        } catch (e) {
+          // 4) falha de leitura: diagnóstico SEGURO (status + finished +
+          //    message apenas) — sem headers/authorization/apikey/cookies.
+          //    NUNCA converte silenciosamente em false.
+          const readErrMsg = e instanceof Error ? e.message : String(e);
+          const diag = `BODY_READ_FAILED: finished=${finishedErrMsg ?? 'ok'} read=${readErrMsg}`;
+          arriveObs.responseBody = diag;
+          log(`ARRIVE_RPC_BODY_READ_FAILED HTTP ${res.status()} ${diag}`);
+          return;
+        }
+        // 5) registro canônico compatível com RPC_OBSERVED: no caso de sucesso
+        //    imprime exatamente "RPC_OBSERVED petwalker_arrive_pickup HTTP 200
+        //    body=true". O status observado é registrado verbatim — nenhuma
+        //    fraqueza: as asserções continuam exigindo HTTP 200 + body true.
+        arriveObs.responseBody = body;
+        rpcCalls['petwalker_arrive_pickup'] = rpcCalls['petwalker_arrive_pickup'] || [];
+        rpcCalls['petwalker_arrive_pickup'].push({ status: res.status(), body });
+        log(`RPC_OBSERVED petwalker_arrive_pickup HTTP ${res.status()} body=${JSON.stringify(body)}`);
+      })();
     };
     // 6/F) erro JS da página (apenas a mensagem).
     const onPageError = (err: Error) => {
@@ -448,8 +495,12 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         armRpcObserver(ownerPage, 'create_walk_request');
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
-        armRpcObserver(walkerPage, 'petwalker_arrive_pickup');
-        armArriveObservers(walkerPage); // T3: observabilidade factual do clique de chegada
+        // T4: o observador genérico NÃO lê mais o body de
+        // petwalker_arrive_pickup — o leitor canônico ÚNICO é o observador
+        // dedicado de chegada (armArriveObservers), que aguarda
+        // response.finished() antes de ler e registra em rpcCalls (compatível
+        // com lastRpc e todas as asserções existentes).
+        armArriveObservers(walkerPage); // T3/T4: observabilidade factual do clique de chegada
       });
 
       await test.step('owner: criar pedido pela UI REAL (create_walk_request) → searching', async () => {
