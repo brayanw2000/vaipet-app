@@ -545,6 +545,7 @@ test.describe('Phase 4.5B3: auth rehydration (page close → new page) + cross-o
         // do Owner; RPCs do Walker na página do Walker; chegada via T6.
         armRpcObserver(rpcCalls, ownerPage, 'create_walk_request');
         armRpcObserver(rpcCalls, ownerPage, 'customer_request_return');
+        armRpcObserver(rpcCalls, ownerPage, 'customer_confirm_arrival'); // T1: confirmação de chegada também é RPC do LADO DO OWNER
         armRpcObserver(rpcCalls, walkerPage, 'accept_walk_request');
         armRpcObserver(rpcCalls, walkerPage, 'petwalker_start_heading');
         armRpcObserver(rpcCalls, walkerPage, 'petwalker_confirm_pickup');
@@ -979,6 +980,15 @@ test.describe('Phase 4.5B3: auth rehydration (page close → new page) + cross-o
         armReentryNavObserver(reentryPage);
         // Identidade read-only: consultas Owner-scoped do app reidratado.
         armOwnerScopedReadObserver(reentryPage);
+        // T1: CONTINUIDADE de observabilidade de RPCs do lado do Owner através
+        // da reidratação — a ownerPage com os listeners originais foi fechada;
+        // a NOVA Page recebe os MESMOS observers sobre o MESMO registro
+        // monotônico rpcCalls. Armados ANTES do goto('/inicio') para cobrir
+        // a reidratação de auth e o mount da Home desde o primeiro momento.
+        // NÃO é observação duplicada: a página antiga já está fechada.
+        armRpcObserver(rpcCalls, reentryPage, 'create_walk_request');
+        armRpcObserver(rpcCalls, reentryPage, 'customer_request_return');
+        armRpcObserver(rpcCalls, reentryPage, 'customer_confirm_arrival');
 
         // ÚNICA navegação legítima de re-entrada. ZERO ações de login:
         // nunca fill email/senha, nunca click Entrar, nunca
@@ -1028,6 +1038,7 @@ test.describe('Phase 4.5B3: auth rehydration (page close → new page) + cross-o
         expect(cAfterRehydration.arrive).toBe(1);
         expect(cAfterRehydration.confirmPickup).toBe(1);
         expect(cAfterRehydration.returnReq).toBe(0);
+        expect(cAfterRehydration.confirmArrival).toBe(0); // T1: mount de /inicio reidratado NÃO confirma chegada
         log('reidratação: ZERO novas RPCs de lifecycle');
       });
 
@@ -1076,6 +1087,7 @@ test.describe('Phase 4.5B3: auth rehydration (page close → new page) + cross-o
         expect(c.arrive).toBe(1);
         expect(c.confirmPickup).toBe(1);
         expect(c.returnReq).toBe(0);
+        expect(c.confirmArrival).toBe(0); // T1: retomada via banner NÃO confirma chegada
         log('PROVA A COMPLETA: reidratação + banner resume + request-return-button + ZERO efeitos colaterais');
       });
 
