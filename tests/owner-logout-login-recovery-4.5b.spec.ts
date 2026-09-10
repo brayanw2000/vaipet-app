@@ -236,6 +236,12 @@ test.describe('Phase 4.5B4: real logout → real login → active-walk rediscove
   // Página TEMPORÁRIA do ownerCtx usada SOMENTE para ler o PIN REAL na rota
   // certificada /historico/<id> — fechada ao final do step (try/finally).
   let ownerPinPage: Page | null = null;
+  // T1: página TEMPORÁRIA de PROVA DE PERSISTÊNCIA pós-logout. Uma NOVA
+  // instância de app (novo React/AuthProvider) sobre o MESMO storage do
+  // browser deve PERMANECER não autenticada se o logout REAL removeu a
+  // sessão persistida (inverso da B3: close→new Page reidratava). Probe de
+  // auth APENAS — sem observers de lifecycle, sem login, sem injeção.
+  let logoutProbePage: Page | null = null;
 
   // ——— Observador factual das respostas RPC reais (HTTP + body) ———
   // Registro ÚNICO e monotônico: a MESMA ownerPage permanece viva através do
@@ -987,6 +993,75 @@ test.describe('Phase 4.5B4: real logout → real login → active-walk rediscove
       });
 
       // ================================================================
+      // T1 — PROVA DE PERSISTÊNCIA: NOVA instância de app sobre o MESMO
+      // storage NÃO reidrata a sessão após o logout REAL (inverso da B3)
+      // ================================================================
+      await test.step('PROBE de persistência: NOVA Page no MESMO ownerCtx → /inicio PERMANECE não autenticada (sessão persistida removida pelo logout real)', async () => {
+        // NOVA Page no MESMO ownerCtx (mesmo storage do browser, MESMA
+        // autenticação de contexto). Nova instância de app: novo mount de
+        // React/AuthProvider. Nada é injetado/restaurado/limpo; nenhum
+        // login; nenhuma chamada manual de auth do Supabase.
+        logoutProbePage = await ownerCtx!.newPage();
+        log('logoutProbePage criada no MESMO ownerCtx (nova instância de app, mesmo storage)');
+
+        // Entrada normal de produto protegida: se a sessão persistida tivesse
+        // sobrevivido ao logout, o AuthProvider reidrataria e a página ficaria
+        // em /inicio autenticado — o que caracterizaria
+        // VALID LOGOUT PERSISTED-SESSION RED.
+        await logoutProbePage.goto('/inicio');
+
+        // Prova autoritativa de estado NÃO autenticado: a página assenta em
+        // /auth com a UI de login visível. NÃO pode assentar em /inicio
+        // autenticado; NÃO pode exibir UI de active-walk.
+        await expect
+          .poll(() => new URL(logoutProbePage!.url()).pathname, {
+            timeout: 15000,
+            message:
+              'VALID LOGOUT PERSISTED-SESSION RED: uma NOVA instância de app reidratou a sessão persistida após o logout real',
+          })
+          .toBe('/auth');
+        const emailInput = logoutProbePage.getByPlaceholder('E-mail');
+        const passInput = logoutProbePage.getByPlaceholder('Senha');
+        const entrarBtn = logoutProbePage.getByRole('button', { name: /^Entrar$/i });
+        await expect(emailInput).toBeVisible({ timeout: 15000 });
+        await expect(passInput).toBeVisible({ timeout: 15000 });
+        await expect(entrarBtn).toBeVisible({ timeout: 15000 });
+
+        // Nenhuma UI de active-walk na instância fresca.
+        await expect(logoutProbePage.getByTestId('request-return-button')).toHaveCount(0);
+        await expect(logoutProbePage.getByRole('button', { name: /Passeio em andamento/i })).toHaveCount(0);
+        log('PROVA DE PERSISTÊNCIA CONFIRMADA: /auth + UI de login; sessão persistida REMOVIDA pelo logout real');
+
+        // Backend permanece íntegro durante o probe (auditoria admin).
+        const s = await auditSession(sessionId);
+        expect(s.id).toBe(sessionId);
+        expect(s.customer_id).toBe(ownerId);
+        expect(s.status).toBe('in_progress');
+        expect(s.current_status).toBe('in_progress');
+
+        // ZERO RPCs de lifecycle durante o probe (observadores do Owner
+        // permanecem na ownerPage; a probe é apenas de persistência de auth).
+        const c = lifecycleCounts();
+        expect(c.create).toBe(1);
+        expect(c.returnReq).toBe(0);
+        expect(c.confirmArrival).toBe(0);
+
+        // A probe é fechada ANTES do login explícito; a ownerPage principal
+        // permanece viva em /auth.
+        await logoutProbePage.close().catch(() => {});
+        logoutProbePage = null;
+        await expect
+          .poll(() => new URL(ownerPage!.url()).pathname, {
+            timeout: 10000,
+            message: 'ownerPage principal deve permanecer em /auth após a probe',
+          })
+          .toBe('/auth');
+        await expect(ownerPage!.getByPlaceholder('E-mail')).toBeVisible({ timeout: 15000 });
+        await expect(ownerPage!.getByRole('button', { name: /^Entrar$/i })).toBeVisible({ timeout: 15000 });
+        log('probe fechada; ownerPage principal reafirmada em /auth com UI de login');
+      });
+
+      // ================================================================
       // LOGIN REAL do MESMO owner — ação genuína de usuário pela UI
       // ================================================================
       await test.step('LOGIN REAL: mesmo owner entra pela UI (/auth → /inicio) — nenhum setSession/token/storage', async () => {
@@ -1092,6 +1167,10 @@ test.describe('Phase 4.5B4: real logout → real login → active-walk rediscove
         // Página temporária de PIN: fechada com segurança em QUALQUER cenário.
         if (ownerPinPage && !ownerPinPage.isClosed()) await ownerPinPage.close().catch(() => {});
         ownerPinPage = null;
+        // T1: probe de persistência pós-logout — fechada com segurança se
+        // ainda existir (falha em qualquer ponto da prova).
+        if (logoutProbePage && !logoutProbePage.isClosed()) await logoutProbePage.close().catch(() => {});
+        logoutProbePage = null;
         // Higiene de listeners.
         if (walkerPage) detachArriveObservers();
         // Contextos: fechados (Owner + Walker).
