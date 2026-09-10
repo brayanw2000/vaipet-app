@@ -997,12 +997,28 @@ test.describe('Phase 4.5B4: real logout → real login → active-walk rediscove
       // storage NÃO reidrata a sessão após o logout REAL (inverso da B3)
       // ================================================================
       await test.step('PROBE de persistência: NOVA Page no MESMO ownerCtx → /inicio PERMANECE não autenticada (sessão persistida removida pelo logout real)', async () => {
+        // Baseline factual de contadores ANTES de criar/navegar a probe
+        // (a criação da página em si não pode alterar o ciclo de vida).
+        const probeCountsBefore = lifecycleCounts();
+        expect(probeCountsBefore.create).toBe(1);
+        expect(probeCountsBefore.returnReq).toBe(0);
+        expect(probeCountsBefore.confirmArrival).toBe(0);
+
         // NOVA Page no MESMO ownerCtx (mesmo storage do browser, MESMA
         // autenticação de contexto). Nova instância de app: novo mount de
         // React/AuthProvider. Nada é injetado/restaurado/limpo; nenhum
         // login; nenhuma chamada manual de auth do Supabase.
         logoutProbePage = await ownerCtx!.newPage();
         log('logoutProbePage criada no MESMO ownerCtx (nova instância de app, mesmo storage)');
+
+        // T2: observabilidade CONTINUADA de RPCs do lado do Owner na probe —
+        // eventos 'response' do Playwright são Page-scoped; sem estes
+        // listeners, uma RPC acidental da probe NÃO entraria em rpcCalls
+        // (falso verde). MESMO registro monotônico rpcCalls — observação
+        // passiva apenas (nada é mockado/interceptado/chamado).
+        armRpcObserver(logoutProbePage, 'create_walk_request');
+        armRpcObserver(logoutProbePage, 'customer_request_return');
+        armRpcObserver(logoutProbePage, 'customer_confirm_arrival');
 
         // Entrada normal de produto protegida: se a sessão persistida tivesse
         // sobrevivido ao logout, o AuthProvider reidrataria e a página ficaria
@@ -1039,12 +1055,19 @@ test.describe('Phase 4.5B4: real logout → real login → active-walk rediscove
         expect(s.status).toBe('in_progress');
         expect(s.current_status).toBe('in_progress');
 
-        // ZERO RPCs de lifecycle durante o probe (observadores do Owner
-        // permanecem na ownerPage; a probe é apenas de persistência de auth).
-        const c = lifecycleCounts();
-        expect(c.create).toBe(1);
-        expect(c.returnReq).toBe(0);
-        expect(c.confirmArrival).toBe(0);
+        // ZERO RPCs de lifecycle durante o probe — AGORA FACTUALMENTE
+        // OBSERVÁVEL: a probe tem os observers do Owner (T2) sobre o MESMO
+        // registro monotônico; comparação antes/depois de TODOS os contadores
+        // (a probe Page é Page-scoped — uma RPC emitida por ela seria
+        // registrada e quebraria esta igualdade).
+        const after = lifecycleCounts();
+        expect(after.create).toBe(probeCountsBefore.create);
+        expect(after.accept).toBe(probeCountsBefore.accept);
+        expect(after.heading).toBe(probeCountsBefore.heading);
+        expect(after.arrive).toBe(probeCountsBefore.arrive);
+        expect(after.confirmPickup).toBe(probeCountsBefore.confirmPickup);
+        expect(after.returnReq).toBe(probeCountsBefore.returnReq);
+        expect(after.confirmArrival).toBe(probeCountsBefore.confirmArrival);
 
         // A probe é fechada ANTES do login explícito; a ownerPage principal
         // permanece viva em /auth.
