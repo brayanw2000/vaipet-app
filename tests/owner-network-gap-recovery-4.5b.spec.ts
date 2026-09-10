@@ -47,7 +47,9 @@
  *   Walker → "Cheguei no Local" real (petwalker_arrive_pickup) → arrived
  *             (observador T6 in-page: clone do fetch real — sem race CDP)
  *   Owner ONLINE → ZERO ações → UI convergindo para arrived
- *   Owner  → lê o PIN REAL da UI (pickup-pin-display — nunca admin/DB)
+ *   Owner  → lê o PIN REAL da UI (/historico/:id em página TEMPORÁRIA do
+ *            MESMO ownerCtx — a ownerPage MONTADA permanece intocada; nunca
+ *            admin/DB)
  *   GAP B   → ownerContext.setOffline(true) novamente
  *   Walker → digita PIN real na UI + petwalker_confirm_pickup  → in_progress
  *             (contrato certificado 4.4: HTTP 200 + reload real do produto)
@@ -870,25 +872,65 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
         log('pós-reconexão A: zero RPCs duplicadas + 1 sessão ativa por dono/pet');
       });
 
-      await test.step('Owner lê o PIN REAL da UI (pickup-pin-display) — nunca admin/DB', async () => {
-        const pinDisplay = ownerPage!.getByTestId('pickup-pin-display');
-        await expect(pinDisplay).toBeVisible({ timeout: 20000 });
+      await test.step('Owner lê o PIN REAL da UI (/historico/:id em página TEMPORÁRIA do mesmo ownerCtx) — nunca admin/DB', async () => {
+        // 1) A ownerPage MONTADA permanece EXATAMENTE onde a reconexão A a
+        //    deixou: MESMA URL EXATA + pathname /search-walk + apresentação
+        //    arrived (pickup-pin-input/submit) ainda presente.
+        expect(ownerPage!.url()).toBe(ownerUrlBeforeGapA);
+        expect(new URL(ownerPage!.url()).pathname).toBe('/search-walk');
+        await expect(ownerPage!.getByTestId('pickup-pin-input').first()).toBeVisible({ timeout: 15000 });
+        await expect(ownerPage!.getByTestId('pickup-pin-submit')).toBeVisible({ timeout: 15000 });
 
-        let pin = '';
-        await expect
-          .poll(
-            async () => {
-              pin = (await pinDisplay.innerText()).trim();
-              return /^[0-9]{6}$/.test(pin);
-            },
-            { timeout: 20000, message: 'PIN de 6 dígitos renderizado pela UI do Owner' }
-          )
-          .toBeTruthy();
-        expect(pin).toMatch(/^[0-9]{6}$/);
-        ownerPin = pin;
-        log(`PIN lido da UI do OWNER (nunca via admin): ${ownerPin}`);
+        // 2) Backend ainda: MESMA sessão/Owner/Walker/Pet, arrived.
+        const s0 = await auditSession(sessionId);
+        expect(s0.id).toBe(sessionId);
+        expect(s0.customer_id).toBe(ownerId);
+        expect(s0.walker_id).toBe(walkerId);
+        expect(s0.pet_id).toBe(petId);
+        expect(s0.status).toBe('arrived');
+        expect(s0.current_status).toBe('arrived');
+
+        // 3) Página TEMPORÁRIA do MESMO ownerCtx (mesma autenticação) para a
+        //    rota certificada 4.5A2.4 do PIN (/historico/:id). A ownerPage
+        //    MONTADA NÃO é navegada, não é recarregada e não é recriada.
+        const ownerPinPage = await ownerCtx!.newPage();
+        try {
+          await ownerPinPage.goto(`/historico/${sessionId}`);
+          const pinDisplay = ownerPinPage.getByTestId('pickup-pin-display');
+          await expect(pinDisplay).toBeVisible({ timeout: 20000 });
+
+          let pin = '';
+          await expect
+            .poll(
+              async () => {
+                pin = (await pinDisplay.innerText()).trim();
+                return /^[0-9]{6}$/.test(pin);
+              },
+              { timeout: 20000, message: 'PIN de 6 dígitos renderizado pela UI do Owner' }
+            )
+            .toBeTruthy();
+          expect(pin).toMatch(/^[0-9]{6}$/);
+          ownerPin = pin;
+          log(`PIN lido da UI do OWNER (página temporária /historico, nunca via admin): ${ownerPin}`);
+        } finally {
+          // A página temporária é fechada SEMPRE (inclusive em falha do step)
+          // e ANTES do GAP B — setOffline(true) aplica-se ao contexto inteiro.
+          await ownerPinPage.close().catch(() => {});
+        }
+
+        // 4) Reafirmação: a ownerPage MONTADA segue intocada — MESMA URL
+        //    EXATA, pathname /search-walk, apresentação arrived presente e
+        //    backend still same-session arrived.
+        expect(ownerPage!.url()).toBe(ownerUrlBeforeGapA);
+        expect(new URL(ownerPage!.url()).pathname).toBe('/search-walk');
+        await expect(ownerPage!.getByTestId('pickup-pin-input').first()).toBeVisible({ timeout: 15000 });
 
         const s = await auditSession(sessionId);
+        expect(s.id).toBe(sessionId);
+        expect(s.customer_id).toBe(ownerId);
+        expect(s.walker_id).toBe(walkerId);
+        expect(s.pet_id).toBe(petId);
+        expect(s.status).toBe('arrived');
         expect(s.current_status).toBe('arrived');
       });
 
