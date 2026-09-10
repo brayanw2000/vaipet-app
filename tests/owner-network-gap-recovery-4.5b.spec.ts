@@ -223,6 +223,13 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
   let arriveCountBeforeReconnectB = 0;
   let confirmPickupCountBeforeReconnectB = 0;
 
+  // URL EXATA do Owner (produzida pelo produto real, capturada de
+  // ownerPage.url() — NUNCA construída manualmente) imediatamente ANTES de
+  // cada lacuna de rede. Após cada reconexão, a página MONTADA deve manter
+  // a MESMA URL exata (sem navegação/mutação de query pela recuperação).
+  let ownerUrlBeforeGapA = '';
+  let ownerUrlBeforeGapB = '';
+
   // Observador factual das respostas RPC reais da página (HTTP + body).
   const rpcCalls: Record<string, Array<{ status: number; body: unknown }>> = {};
 
@@ -466,7 +473,7 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
         await loginViaUi(ownerPage, ownerEmail);
         await loginViaUi(walkerPage, walkerEmail);
         armRpcObserver(ownerPage, 'create_walk_request');
-        armRpcObserver(walkerPage, 'customer_request_return');
+        armRpcObserver(ownerPage, 'customer_request_return'); // T1: RPC do LADO DO OWNER — observada na página do Owner
         armRpcObserver(walkerPage, 'petwalker_confirm_pickup');
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
@@ -724,6 +731,11 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
         expect(petActive).toHaveLength(1);
         expect(petActive[0].id).toBe(sessionId);
 
+        // URL EXATA atual do Owner, produzida pelo produto real (capturada,
+        // não construída) — invariante de igualdade total pós-reconexão.
+        ownerUrlBeforeGapA = ownerPage!.url();
+        log(`GAP A: ownerUrlBeforeGapA=${ownerUrlBeforeGapA}`);
+
         // Lacuna de rede REAL do ambiente de teste — NÃO é uma ação de produto.
         // A página do Owner permanece MONTADA e intocada.
         await ownerCtx!.setOffline(true);
@@ -832,7 +844,10 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
         await expect(ownerPage!.getByTestId('pickup-pin-submit')).toBeVisible({ timeout: 15000 });
         log('CATCH-UP A CONFIRMADO: UI arrived do Owner restaurada SEM reload/navegação/ação');
 
-        // URL inalterada: a página MONTADA permanece na MESMA rota.
+        // URL inalterada: a página MONTADA mantém a MESMA URL EXATA (igualdade
+        // total — sem navegação/mutação de query pela recuperação). O pathname
+        // permanece como asserção suplementar.
+        expect(ownerPage!.url()).toBe(ownerUrlBeforeGapA);
         expect(new URL(ownerPage!.url()).pathname).toBe('/search-walk');
 
         // ZERO novas RPCs de ciclo de vida causadas pela reconexão (comparação
@@ -896,6 +911,11 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
 
         const before = lifecycleCounts();
         log(`pré-GAP B: ${JSON.stringify(before)}`);
+
+        // URL EXATA atual do Owner, produzida pelo produto real (capturada,
+        // não construída) — invariante de igualdade total pós-reconexão.
+        ownerUrlBeforeGapB = ownerPage!.url();
+        log(`GAP B: ownerUrlBeforeGapB=${ownerUrlBeforeGapB}`);
 
         await ownerCtx!.setOffline(true);
         log('GAP B: ownerContext.setOffline(true) — Owner offline novamente, página montada');
@@ -989,7 +1009,10 @@ test.describe('Phase 4.5B1: Owner network-gap recovery (no reload)', () => {
           timeout: 15000,
         });
 
-        // URL inalterada: a página MONTADA permanece na MESMA rota.
+        // URL inalterada: a página MONTADA mantém a MESMA URL EXATA (igualdade
+        // total — sem navegação/mutação de query pela recuperação). O pathname
+        // permanece como asserção suplementar.
+        expect(ownerPage!.url()).toBe(ownerUrlBeforeGapB);
         expect(new URL(ownerPage!.url()).pathname).toBe('/search-walk');
 
         // ZERO novas RPCs de ciclo de vida causadas pela reconexão.
