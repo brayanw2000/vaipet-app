@@ -419,7 +419,7 @@ const SearchWalk = () => {
     })();
   }, [searchParams, user, setSearchParams, commitUserLocation, userLocation]);
 
-  // ---------- AUTO-RECOVERY de sessão `searching`/`accepted` no mount/reload ----------
+  // ---------- AUTO-RECOVERY de sessão `searching`/`accepted`/`heading_to_pickup`/`arrived` no mount/reload ----------
   // Se o Owner recarregar /search-walk enquanto existe uma sessão real
   // `searching` ou `accepted` (criada pela própria UI, nunca inserida por
   // teste/admin), o banco continua sendo a autoridade: redescobre a MESMA
@@ -427,10 +427,14 @@ const SearchWalk = () => {
   // e SEM chamar create_walk_request.
   // - `searching` (comportamento certificado 4.5A1, inalterado): restaura a
   //   tela de espera (waiting) diretamente.
-  // - `accepted`: apenas semeia `currentSessionId` e deixa o efeito canônico
-  //   de sincronização de status buscar a linha completa, promover via
-  //   handleAccepted e hidratar o PetWalker real. Nenhuma promoção eager de
-  //   apresentação nem consulta duplicada de perfil.
+  // - `accepted` e `heading_to_pickup` (comportamento certificado 4.5A2.x,
+  //   inalterado): apenas semeiam `currentSessionId`.
+  // - `arrived` (PATCH P4B): a MESMA estratégia discovery-only — semeia
+  //   apenas `currentSessionId`; o efeito canônico de sincronização de status
+  //   busca a linha completa, define sessionStatus='arrived' (autoridade do
+  //   domínio) e a P4A mapeia arrived → fase 'arrived' em WalkInProgress,
+  //   restaurando o overlay de PIN automaticamente. Nenhuma promoção eager de
+  //   apresentação, nenhuma hidratação duplicada, sem tocar ?resume.
   // As dependências são IDENTIDADES ESCALARES ESTÁVEIS (user.id e o valor
   // `resume`), não os objetos contêineres: um refresh do contexto de auth que
   // troque o objeto `user` mantendo o MESMO id, ou um rerender que produza
@@ -447,7 +451,7 @@ const SearchWalk = () => {
           .from('walk_sessions')
           .select('id, current_status')
           .eq('customer_id', recoveryUserId)
-          .in('current_status', ['searching', 'accepted', 'heading_to_pickup'])
+          .in('current_status', ['searching', 'accepted', 'heading_to_pickup', 'arrived'])
           .maybeSingle();
         // Fail closed: erro, ausência de sessão ou múltiplas sessões
         // (maybeSingle) → permanece idle. Nunca fabrica estado de espera nem
@@ -461,15 +465,18 @@ const SearchWalk = () => {
           setSearchStatus('waiting');
         } else if (
           session.current_status === 'accepted' ||
-          session.current_status === 'heading_to_pickup'
+          session.current_status === 'heading_to_pickup' ||
+          // P4B: arrived entra na MESMA estratégia discovery-only.
+          session.current_status === 'arrived'
         ) {
           // Só redescobre a sessão: o efeito canônico de sync de status
-          // (currentSessionId) busca a linha completa e promove via
-          // handleAccepted — sem promoção eager nem hidratação duplicada.
+          // (currentSessionId) busca a linha completa e define sessionStatus
+          // (autoridade do domínio) — sem promoção eager nem hidratação
+          // duplicada. A P4A mapeia arrived → fase 'arrived' em WalkInProgress.
           setCurrentSessionId(session.id);
         }
       } catch (e) {
-        console.error('[SearchWalk] auto-recovery searching/accepted/heading_to_pickup failed:', e);
+        console.error('[SearchWalk] auto-recovery searching/accepted/heading_to_pickup/arrived failed:', e);
         // Fail closed: mantém idle; nenhuma sessão nova é criada.
       }
     })();
