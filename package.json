@@ -31,6 +31,7 @@
     "test:e2e:phase45a:owner-arrived-recovery": "playwright test tests/owner-arrived-recovery-4.5a.spec.ts",
     "test:e2e:phase45a:owner-in-progress-recovery": "playwright test tests/owner-in-progress-recovery-4.5a.spec.ts",
     "test:e2e:phase45a:owner-returning-recovery": "playwright test tests/owner-returning-recovery-4.5a.spec.ts",
+    "test:e2e:phase45a:owner-completed-review-recovery": "playwright test tests/owner-completed-review-recovery-4.5a.spec.ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
 
   },
