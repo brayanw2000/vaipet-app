@@ -73,9 +73,25 @@
  *     manual — o ÚNICO caminho para arrived é o clique real do Walker.
  *   - Observabilidade mantida: observador de respostas RPC real
  *     (RPC_OBSERVED HTTP + body) para petwalker_arrive_pickup.
+ *   - T3: observabilidade do clique REAL "Cheguei no Local" (somente leitura):
+ *     fatos de UI pré-clique (pathname/texto/disabled), request observado,
+ *     requestfailed, resposta factual, pageerror e console filtrado — sem
+ *     headers/credenciais e sem alterar qualquer comportamento.
+ * PATCH T3 — OBSERVABILIDADE DO CLIQUE DE CHEGADA (somente diagnóstico):
+ * Em torno do clique REAL "Cheguei no Local" adicionamos fatos factuais e
+ * SEGUROS (nenhum header, token ou chave é logado) para distinguir exatamente:
+ *   A. handler do clique nunca executa
+ *   B. handler executa e entra no estado arriving ("Processando...")
+ *   C. request emitido (ARRIVE_REQUEST_SEEN)
+ *   D. request falha antes da resposta (requestfailed)
+ *   E. resposta com status != 200 / body false / erro
+ *   F. erro JS da página (pageerror) ou console de erro relevante
+ * São apenas OBSERVADORES: nenhum comportamento de ciclo de vida é alterado,
+ * nenhuma GPS é mockada, nenhuma RPC é invocada manualmente e nenhuma
+ * asserção de recuperação é modificada.
  */
 
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type ConsoleMessage, type Page, type Request, type Response } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { failClosedCleanup } from './helpers/cleanup';
 
@@ -103,6 +119,11 @@ const WALKER_POS = { lng: -46.7001, lat: -23.6001 };
 
 // Estados ativos (não terminais) do domínio.
 const ACTIVE_STATUSES = ['searching', 'accepted', 'heading_to_pickup', 'arrived', 'in_progress', 'returning'];
+
+// T3: filtro estrito de console — apenas erros relevantes ao caminho de
+// chegada. NUNCA dumpa objetos arbitrários (podem conter segredos): apenas a
+// mensagem de texto do erro.
+const ARRIVE_CONSOLE_FILTER = /arriv|pickup|GPS|geolocation|supabase|fetch/i;
 
 const log = (msg: string) =>
   console.log(`[${new Date().toISOString()}] [4.5a2-owner-arrived-recovery] ${msg}`);
@@ -247,6 +268,104 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
     return calls[calls.length - 1];
   };
 
+  // ——— T3: observabilidade factual e SEGURA do caminho de chegada ———
+  // Escopo restrito a /rest/v1/rpc/petwalker_arrive_pickup. Nada de headers,
+  // authorization ou chaves é capturado/logado.
+  let detachArriveObservers: () => void = () => {};
+  const arriveObs = {
+    requestSeen: false,
+    requestFailed: null as string | null,
+    responseStatus: null as number | null,
+    responseBody: null as unknown,
+    handlerEntryObserved: false,
+    pageErrors: [] as string[],
+    consoleErrors: [] as string[],
+  };
+
+  /** Instala os observadores T3 na página do Walker: request, requestfailed,
+   * resposta factual, pageerror e console de erro filtrado — escopo restrito à
+   * RPC de chegada, sem capturar headers/credenciais. */
+  const armArriveObservers = (page: Page) => {
+    // 1) request emitido: apenas método + pathname da URL (sem headers).
+    const onRequest = (req: Request) => {
+      if (!new URL(req.url()).pathname.includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
+      arriveObs.requestSeen = true;
+      log(`ARRIVE_REQUEST_SEEN=true method=${req.method()} path=/rest/v1/rpc/petwalker_arrive_pickup`);
+    };
+    // 2) falha ANTES da resposta (rede/abort/CORS).
+    const onRequestFailed = (req: Request) => {
+      if (!new URL(req.url()).pathname.includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
+      arriveObs.requestFailed = req.failure()?.errorText ?? 'unknown';
+      log(`ARRIVE_REQUESTFAILED: ${arriveObs.requestFailed}`);
+    };
+    // 3) resposta factual (status + body seguro) — complementa RPC_OBSERVED.
+    const onResponse = (res: Response) => {
+      if (!new URL(res.url()).pathname.includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
+      arriveObs.responseStatus = res.status();
+      res
+        .text()
+        .then((t) => {
+          try {
+            arriveObs.responseBody = JSON.parse(t);
+          } catch {
+            arriveObs.responseBody = 'NON_JSON';
+          }
+          log(`ARRIVE_RPC_RESPONSE HTTP ${res.status()} body=${JSON.stringify(arriveObs.responseBody)}`);
+        })
+        .catch(() => {
+          arriveObs.responseBody = 'BODY_READ_FAILED';
+        });
+    };
+    // 6/F) erro JS da página (apenas a mensagem).
+    const onPageError = (err: Error) => {
+      arriveObs.pageErrors.push(err.message);
+      log(`ARRIVE_PAGEERROR: ${err.message}`);
+    };
+    // Console de erro filtrado (apenas texto da mensagem).
+    const onConsole = (msg: ConsoleMessage) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (!ARRIVE_CONSOLE_FILTER.test(text)) return;
+      arriveObs.consoleErrors.push(text);
+      log(`WALKER_CONSOLE_ERROR: ${text}`);
+    };
+    page.on('request', onRequest);
+    page.on('requestfailed', onRequestFailed);
+    page.on('response', onResponse);
+    page.on('pageerror', onPageError);
+    page.on('console', onConsole);
+    detachArriveObservers = () => {
+      page.off('request', onRequest);
+      page.off('requestfailed', onRequestFailed);
+      page.off('response', onResponse);
+      page.off('pageerror', onPageError);
+      page.off('console', onConsole);
+      detachArriveObservers = () => {};
+    };
+  };
+
+  /** Relatório factual de timeout do RPC de chegada: SOMENTE fatos seguros
+   * (pathname, texto e estado do botão, handler-entry, rede, resposta,
+   * pageerror/console filtrados). Sem credenciais/headers. */
+  const arriveRpcTimeoutDiagnostic = (pre: {
+    pathname: string;
+    buttonText: string;
+    buttonDisabled: boolean;
+  }) =>
+    [
+      `petwalker_arrive_pickup não observado (HTTP 200 + true) via UI real`,
+      `pathname_before_click=${pre.pathname}`,
+      `button_text_before_click=${JSON.stringify(pre.buttonText)}`,
+      `button_disabled_before_click=${pre.buttonDisabled}`,
+      `handler_entry_processando_observed=${arriveObs.handlerEntryObserved}`,
+      `ARRIVE_REQUEST_SEEN=${arriveObs.requestSeen}`,
+      `requestfailed=${arriveObs.requestFailed ?? 'none'}`,
+      `response_status=${arriveObs.responseStatus ?? 'none'}`,
+      `response_body=${arriveObs.responseBody === null ? 'none' : JSON.stringify(arriveObs.responseBody)}`,
+      `pageerrors=${arriveObs.pageErrors.length ? JSON.stringify(arriveObs.pageErrors) : 'none'}`,
+      `console_errors=${arriveObs.consoleErrors.length ? JSON.stringify(arriveObs.consoleErrors) : 'none'}`,
+    ].join(' | ');
+
   async function auditSession(id: string) {
     const { data, error } = await admin.from('walk_sessions').select('*').eq('id', id).single();
     if (error) throw new Error(`audit_session_failed: ${JSON.stringify(error)}`);
@@ -330,6 +449,7 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
         armRpcObserver(walkerPage, 'petwalker_arrive_pickup');
+        armArriveObservers(walkerPage); // T3: observabilidade factual do clique de chegada
       });
 
       await test.step('owner: criar pedido pela UI REAL (create_walk_request) → searching', async () => {
@@ -579,21 +699,93 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         // botão REAL "Cheguei no Local", que usa o GPS do browser
         // (navigator.geolocation.getCurrentPosition) e chama:
         //   petwalker_arrive_pickup(_session_id, _lat, _lng, _accuracy)
+        //
+        // T3: imediatamente ANTES do clique, registramos fatos de UI SEGUROS
+        // (pathname, texto do botão, disabled) — sem inspecionar internals de
+        // React e sem expor tokens/headers.
         const arriveBtn = walkerPage!.getByRole('button', { name: /Cheguei no Local/i });
         await expect(arriveBtn).toBeVisible({ timeout: 30000 });
+
+        const preClickPathname = new URL(walkerPage!.url()).pathname;
+        expect(preClickPathname).toBe(`/petwalker/passeio/${sessionId}`);
+        const preClickButtonText = (await arriveBtn.innerText()).trim();
+        expect(preClickButtonText).toMatch(/Cheguei no Local/i);
+        const preClickButtonDisabled = await arriveBtn.isDisabled();
+        expect(preClickButtonDisabled).toBe(false);
+        const preClickFacts = {
+          pathname: preClickPathname,
+          buttonText: preClickButtonText,
+          buttonDisabled: preClickButtonDisabled,
+        };
+        log(
+          `pré-clique: pathname=${preClickFacts.pathname} text=${JSON.stringify(preClickFacts.buttonText)} disabled=${preClickFacts.buttonDisabled}`
+        );
+
+        // Handler-entry (B): WalkDetails faz setArriving(true) ANTES de aguardar
+        // a RPC — o botão passa a "Processando..." (o NOME acessível muda, então
+        // observamos pelo novo nome, não filtrando o locator antigo).
+        // Observação race-safe: se a RPC for rápida e a página recarregar
+        // (window.location.reload() no sucesso), a navegação é evidência
+        // legítima de sucesso e NÃO pode gerar falha falsa. A espera é pela
+        // PRIMEIRA evidência entre "Processando..." visível e um novo 'load',
+        // com limite de 4s — nunca falha por si só.
+        let navigationHappened = false;
+        let resolveNavigation: (() => void) | null = null;
+        const navigationPromise = new Promise<void>((resolve) => {
+          resolveNavigation = resolve;
+        });
+        const onNav = () => {
+          navigationHappened = true;
+          resolveNavigation?.();
+        };
+        walkerPage!.once('load', onNav);
+        const processandoProbe = (async () => {
+          try {
+            await walkerPage!
+              .getByRole('button', { name: /Processando/i })
+              .waitFor({ state: 'visible', timeout: 4000 });
+            arriveObs.handlerEntryObserved = true;
+            log('handler-entry observado: botão em "Processando..." (setArriving(true))');
+          } catch {
+            log('handler-entry: "Processando..." não observado em 4s (fato factual, não falha)');
+          }
+        })();
+
+        // UMA única ação real de usuário: o clique no botão do produto.
         await arriveBtn.click();
+        await Promise.race([
+          processandoProbe,
+          navigationPromise,
+          new Promise((r) => setTimeout(r, 4000)),
+        ]);
+        walkerPage!.off('load', onNav);
+        // Se NÃO houve navegação, aguardamos o fechamento factual da observação
+        // ("Processando..." visível ou não em 4s). Se houve navegação, a
+        // evidência de navegação já basta — o probe nunca rejeita (try/catch).
+        if (!navigationHappened) await processandoProbe;
+        if (navigationHappened && !arriveObs.handlerEntryObserved) {
+          log('handler-entry inferido via navegação da página (reload pós-sucesso da RPC)');
+        }
 
         // Resposta REAL do petwalker_arrive_pickup: HTTP 200 + body true
         // (a RPC retorna boolean: TRUE quando o UPDATE promoveu a sessão).
-        await expect
-          .poll(
-            () => {
-              const rpc = lastRpc('petwalker_arrive_pickup');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
-            },
-            { timeout: 20000, message: 'petwalker_arrive_pickup HTTP 200 + true (via UI)' }
-          )
-          .toBeTruthy();
+        try {
+          await expect
+            .poll(
+              () => {
+                const rpc = lastRpc('petwalker_arrive_pickup');
+                return !!(rpc && rpc.status === 200 && rpc.body === true);
+              },
+              { timeout: 20000, intervals: [250, 500, 1000] }
+            )
+            .toBeTruthy();
+        } catch (err) {
+          // T3: falha factual com o relatório completo e SEGURO do caminho de
+          // chegada (sem credenciais/headers) para distinguir A–F.
+          throw new Error(
+            `${arriveRpcTimeoutDiagnostic(preClickFacts)} | underlying=${err instanceof Error ? err.message : String(err)}`
+          );
+        }
         log('petwalker_arrive_pickup real observado (HTTP 200 + true, via UI "Cheguei no Local")');
 
         // Backend: MESMA sessão agora arrived, MESMO Walker.
@@ -747,6 +939,8 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
       });
     } finally {
       await test.step('cleanup fail-closed: ZERO resíduos', async () => {
+        // T3: desinstala os observadores de chegada (higiene de listeners).
+        if (walkerPage) detachArriveObservers();
         if (walkerCtx) await walkerCtx.close().catch(() => {});
         if (ownerCtx) await ownerCtx.close().catch(() => {});
         // Sessão criada pela UI: remoção direta fail-closed (filhos → sessão),
