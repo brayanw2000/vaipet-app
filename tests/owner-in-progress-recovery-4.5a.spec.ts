@@ -960,8 +960,10 @@ test.describe('Phase 4.5A2.4: Owner in_progress resume/reload recovery (banner ?
         expect(petActive).toHaveLength(1);
         expect(petActive[0].id).toBe(sessionId);
 
-        // 6. ZERO novas RPCs de lifecycle causadas pelo reload do Owner.
-        expect(rpcCalls['create_walk_request'] || []).toHaveLength(0);
+        // 6. ZERO novas RPCs de lifecycle causadas pelo reload do Owner —
+        // comparação ANTES/DEPOIS monotônica (a observação ORIGINAL da
+        // create_walk_request da UI não é zerada; reload → ZERO NOVAS chamadas).
+        expect((rpcCalls['create_walk_request'] || []).length).toBe(createCountBeforeReload);
         expect((rpcCalls['accept_walk_request'] || []).length).toBe(acceptCountBeforeReload);
         expect((rpcCalls['petwalker_start_heading'] || []).length).toBe(startHeadingCountBeforeReload);
         expect((rpcCalls['petwalker_arrive_pickup'] || []).length).toBe(arriveCountBeforeReload);
