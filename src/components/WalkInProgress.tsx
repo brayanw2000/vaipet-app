@@ -7,6 +7,7 @@ import { SupportChat } from './SupportChat';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import type { TransportInfo } from '@/lib/walkerProfile';
+import type { WalkStatus } from '@/types/walk';
 import { createDog3DLayer, preloadDog3DAsset, type Dog3DLayer } from '@/lib/dog3dLayer';
 import { createCheckpoint3DLayer, preloadCheckpointAsset, type Checkpoint3DLayer } from '@/lib/checkpoint3dLayer';
 import { hideMapLabels, tintMapInk, enrichMap } from '@/lib/mapStyle';
@@ -62,6 +63,14 @@ interface WalkInProgressProps {
    * rendered as distinct dashed lines and a numbered pin at each stop.
    */
   localStops?: Array<{ lng: number; lat: number; label?: string }>;
+  /**
+   * Status de domínio canônico da sessão (`walk_sessions.current_status`),
+   * propagado por SearchWalk — autoridade do lifecycle. Quando === 'arrived',
+   * a apresentação é sincronizada para a fase 'arrived' sem esperar a
+   * animação local de pickup terminar. Cache de apresentação
+   * (vaipet_walk_phase_*) nunca vence este valor.
+   */
+  sessionStatus?: WalkStatus | null;
 }
 
 // Defensive ordering: trust an explicit `order` field if present, otherwise
@@ -88,6 +97,7 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
   transport, walkerCode = '0000', onToggleTheme,
   walkType = 'livre',
   localStops = [],
+  sessionStatus = null,
 }) => {
   // Resolved stops: starts from the prop, but if the parent passed none AND
   // we have a sessionId for a 'local' walk, we rehydrate from the DB so the
@@ -327,6 +337,22 @@ export const WalkInProgress: React.FC<WalkInProgressProps> = ({
       sessionStorage.setItem(`vaipet_walk_phase_${sessionId}`, phase);
     }
   }, [phase, isComing, sessionId]);
+
+  // DOMAIN AUTHORITY → apresentação (sync de arrived): quando o backend real
+  // já provou `arrived` (SearchWalk.sessionStatus — fonte canônica de
+  // walk_sessions.current_status), a fase de apresentação vira 'arrived'
+  // IMEDIATAMENTE, sem esperar a animação local de pickup terminar. Efeito
+  // idempotente: já estando 'arrived', nada é re-setado. Um cache antigo de
+  // apresentação (vaipet_walk_phase_*) NUNCA pode vencer o domínio.
+  // A animação de pickup não regride este estado: o efeito de animação tem
+  // `phase` como dependência e retorna cedo quando phase === 'arrived'
+  // (cancelando o RAF no cleanup) — o `setPhase('arrived')` local do fim da
+  // animação apenas reafirma o mesmo valor.
+  useEffect(() => {
+    if (sessionStatus !== 'arrived') return;
+    if (phaseRef.current === 'arrived') return;
+    setPhase('arrived');
+  }, [sessionStatus]);
 
   // Haversine distance in meters between two [lng,lat] points
   const haversine = (a: [number, number], b: [number, number]) => {

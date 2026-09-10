@@ -2438,6 +2438,7 @@ const SearchWalk = () => {
           walkerCode={walker?.code ?? ''}
           walkType={walkType}
           localStops={localStops.map(s => ({ lng: s.lng, lat: s.lat, label: s.label }))}
+          sessionStatus={sessionStatus}
         />
       )}
 
