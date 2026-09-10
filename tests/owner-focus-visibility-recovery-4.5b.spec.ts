@@ -27,11 +27,17 @@
  *     → aba do Owner vai para segundo plano (foregroundDummyPage +
  *       bringToFront — troca de aba REAL do browser)
  *     → Walker REAL "Cheguei no Local" (T6) → backend arrived
- *     → baseline de leituras de status ENQUANTO OCULTO
+ *     → ÂNCORA: aguarda uma leitura REAL OBSERVADA de walk_sessions enquanto
+ *       a aba AINDA está oculta (polling de 5s existente) e captura o
+ *       baseline IMEDIATAMENTE após ela — elimina a corrida de fase do
+ *       setInterval (sem âncora, um tick periódico qualquer dentro da janela
+ *       pós-foreground produziria um FALSO VERDE)
  *     → ownerPage.bringToFront() (ÚNICA ação de retorno; nível browser)
  *     → visibilityState 'visible' / document.hidden === false
- *     → ≥1 NOVO GET real de walk_sessions p/ MESMA sessão dentro de ~3s
- *       (distingue a recuperação focus/visibility do polling de 5s)
+ *     → ≥1 NOVO GET real de walk_sessions p/ MESMA sessão com timestamp
+ *       >= foregroundActionAt em janela de 2s — como âncora→foreground
+ *       < 2s e janela < 2s, o total (< 4s) é INFERIOR ao período de 5s do
+ *       polling: a leitura não pode ser um tick periódico normal
  *     → apresentação arrived canônica do Owner (pickup-pin-input/submit +
  *       backend arrived) sem NENHUMA ação de produto
  *
@@ -238,10 +244,17 @@ test.describe('Phase 4.5B2: Owner browser-tab visibility/focus recovery (no relo
   let confirmPickupCountBeforeForeground = 0;
   let returnReqCountBeforeForeground = 0;
 
-  // Baseline de leituras de status REAIS, gravado ENQUANTO a aba está oculta
-  // (após backend arrived confirmado). A prova de recuperação exige ≥1 NOVA
-  // leitura após o foreground em janela curta (~3s).
+  // T1: ANCORAGEM da prova de leitura. O baseline NÃO é mais capturado
+  // imediatamente: aguardamos uma leitura REAL OBSERVADA enquanto a aba está
+  // OCULTA (âncora fresca do polling de 5s) e capturamos o baseline logo
+  // APÓS ela. Sem âncora, um tick periódico qualquer dentro da janela
+  // pós-foreground (ex.: âncora antiga T=-4.8s → tick normal em T=+0.2s)
+  // produziria FALSO VERDE. Sem sleep cego: expect.poll sobre observações.
   let statusReadCountBeforeForeground = 0;
+  // Timestamp (Date.now()) da ÚLTIMA leitura observada em estado oculto
+  // (âncora fresca) e do instante da ação de foreground (nível browser).
+  let lastHiddenStatusReadAt = 0;
+  let foregroundActionAt = 0;
 
   // ——— Observador SAFE de leituras de status (somente leitura; NUNCA mock) ———
   // Fatos armazenados: timestamp, method, pathname e o filtro de sessão.
@@ -904,18 +917,45 @@ test.describe('Phase 4.5B2: Owner browser-tab visibility/focus recovery (no relo
       });
 
       // ================================================================
-      // BASELINE PRÉ-FOREGROUND — contagens enquanto a aba está oculta
+      // BASELINE PRÉ-FOREGROUND — ÂNCORA de leitura real em aba oculta
       // ================================================================
-      await test.step('BASELINE pré-foreground: leituras de status + URL EXATA + contadores (aba ainda oculta)', async () => {
+      await test.step('BASELINE pré-foreground: âncora REAL de leitura oculta + URL EXATA + contadores (aba ainda oculta)', async () => {
         // Backend arrived confirmado; a aba do Owner AINDA está oculta.
-        const vis = await ownerPage!.evaluate(() => document.visibilityState);
-        expect(vis).toBe('hidden');
+        const vis0 = await ownerPage!.evaluate(() => document.visibilityState);
+        expect(vis0).toBe('hidden');
 
-        // Baseline factual de leituras de status (GET walk_sessions p/ MESMA
-        // sessão) — pode já haver leituras de polling/realtime anteriores;
-        // a prova exigirá ACRÉSCIMO após o foreground.
+        // ÂNCORA: esperar uma leitura REAL OBSERVADA (GET walk_sessions p/
+        // MESMA sessão) enquanto a página permanece OCULTA. Fonte factual: o
+        // polling de recuperação de 5s existente do produto. Janela de 8s =
+        // conservadora (> 5s). SEM fetchStatus manual; SEM eventos sintéticos.
+        // Se nenhuma leitura oculta ocorrer: falha factual de polling em
+        // estado oculto — NÃO é automaticamente um RED de focus/visibility.
+        const hiddenReadCountStart = statusReads.length;
+        log(`hiddenReadCountStart=${hiddenReadCountStart}`);
+        await expect
+          .poll(() => statusReads.length, {
+            timeout: 8000,
+            intervals: [250, 500, 1000],
+            message:
+              'HIDDEN-STATE STATUS POLLING NOT OBSERVED: nenhum GET walk_sessions p/ mesma sessão observado enquanto a aba estava oculta na janela do polling (não é RED de focus/visibility)',
+          })
+          .toBeGreaterThan(hiddenReadCountStart);
+
+        // Baseline capturado IMEDIATAMENTE após a âncora fresca observada.
         statusReadCountBeforeForeground = statusReads.length;
-        log(`statusReadCountBeforeForeground=${statusReadCountBeforeForeground}`);
+        const lastHiddenStatusRead = statusReads[statusReads.length - 1];
+        lastHiddenStatusReadAt = lastHiddenStatusRead.timestamp;
+        log(
+          `statusReadCountBeforeForeground=${statusReadCountBeforeForeground} lastHiddenStatusReadAt=${lastHiddenStatusReadAt}`
+        );
+
+        // Reafirmação: a aba AINDA está oculta no momento da âncora.
+        const vis = await ownerPage!.evaluate(() => ({
+          visibilityState: document.visibilityState,
+          hidden: document.hidden,
+        }));
+        expect(vis.visibilityState).toBe('hidden');
+        expect(vis.hidden).toBe(true);
 
         // URL EXATA inalterada enquanto oculta — a página MONTADA não saiu da
         // rota nem mutou a query.
@@ -936,9 +976,10 @@ test.describe('Phase 4.5B2: Owner browser-tab visibility/focus recovery (no relo
       // FOREGROUND — ÚNICA ação de retorno (nível browser) + ZERO ações
       // ================================================================
       await test.step('FOREGROUND: ownerPage.bringToFront() → visible + document.hidden=false → ZERO ações de produto', async () => {
-        // ÚNICA ação de retorno — nível browser (não é despacho de evento).
+        // Instante factual da ÚNICA ação de retorno (nível browser).
+        foregroundActionAt = Date.now();
         await ownerPage!.bringToFront();
-        log('ownerPage.bringToFront() executado (ÚNICA ação de retorno)');
+        log(`ownerPage.bringToFront() executado em ${foregroundActionAt} (ÚNICA ação de retorno)`);
 
         // Transição de visibilidade produzida PELO BROWSER.
         await expect
@@ -958,6 +999,14 @@ test.describe('Phase 4.5B2: Owner browser-tab visibility/focus recovery (no relo
         expect(vis.visibilityState).toBe('visible');
         expect(vis.hidden).toBe(false);
 
+        // Invariante de timing: o foreground ocorreu IMEDIATAMENTE após a
+        // âncora oculta. Limite conservador de 2s: o expect.poll da âncora
+        // detecta a leitura em ≤ ~1s (maior intervalo) + overhead dos steps;
+        // 2s cobre isso com folga e mantém âncora→novoGET < 4s < 5s (período
+        // do polling) — separação lógica rigorosa do tick periódico.
+        expect(foregroundActionAt - lastHiddenStatusReadAt).toBeLessThan(2000);
+        log(`timing: foregroundActionAt - lastHiddenStatusReadAt = ${foregroundActionAt - lastHiddenStatusReadAt}ms (< 2000ms)`);
+
         // Daqui em diante: ZERO ações de produto. Sem clique, goto, reload,
         // pushState, setSearchParams, storage, fetchStatus manual, RPC manual
         // ou evento sintético de focus/visibility — apenas OBSERVAÇÃO.
@@ -965,28 +1014,44 @@ test.describe('Phase 4.5B2: Owner browser-tab visibility/focus recovery (no relo
       });
 
       // ================================================================
-      // PROVA DA LEITURA DE RECUPERAÇÃO (focus/visibility) — janela curta
+      // PROVA DA LEITURA DE RECUPERAÇÃO (focus/visibility) — sem corrida
       // ================================================================
-      await test.step('RECOVERY READ: ≥1 NOVO GET walk_sessions (mesma sessão) dentro de ~3s após o foreground', async () => {
-        // Janela de 3s: distingue a recuperação imediata focus/visibility
-        // (onFocus → fetchStatus('recovery')) do polling normal de 5s.
+      await test.step('RECOVERY READ: novo GET pós-foreground com timestamp >= foregroundActionAt (janela 2s — antes do próximo tick de 5s)', async () => {
+        // Prova autoritativa SEM corrida de fase do polling:
+        //   1. contagem cresceu além do baseline capturado APÓS a âncora;
+        //   2. o timestamp da NOVA observação é >= foregroundActionAt
+        //      (imediatamente ANTES do bringToFront);
+        //   3. janela de 2s < próximo tick periódico esperado (~3s ou mais,
+        //      pois âncora→foreground < 2s e o período é 5s).
         // Ambos focus e visibilitychange podem legitimamente produzir leituras;
-        // exigimos apenas PELO MENOS UMA leitura real adicional.
+        // exigimos apenas PELO MENOS UMA leitura real adicional qualificada.
         await expect
-          .poll(() => statusReads.length, {
-            timeout: 3000,
-            intervals: [100, 250, 500, 1000],
-            message:
-              'FOCUS/VISIBILITY RECOVERY READ NOT OBSERVED: nenhum novo GET walk_sessions p/ mesma sessão na janela imediata pós-foreground',
-          })
-          .toBeGreaterThan(statusReadCountBeforeForeground);
-        const latest = statusReads[statusReads.length - 1];
+          .poll(
+            () => {
+              const fresh = statusReads[statusReads.length - 1];
+              return (
+                statusReads.length > statusReadCountBeforeForeground &&
+                !!fresh &&
+                fresh.timestamp >= foregroundActionAt
+              );
+            },
+            {
+              timeout: 2000,
+              intervals: [100, 250, 500, 1000],
+              message:
+                'FOCUS/VISIBILITY RECOVERY READ NOT OBSERVED: nenhum novo GET walk_sessions p/ mesma sessão com timestamp >= foregroundActionAt na janela imediata pós-foreground',
+            }
+          )
+          .toBe(true);
+        const fresh = statusReads[statusReads.length - 1];
         log(
-          `FOCUS/VISIBILITY RECOVERY READ CONFIRMADO: #${statusReads.length} GET ${latest.pathname} ${latest.sessionFilter} (baseline=${statusReadCountBeforeForeground})`
+          `FOCUS/VISIBILITY RECOVERY READ CONFIRMADO: #${statusReads.length} GET ${fresh.pathname} ${fresh.sessionFilter} em ${fresh.timestamp} (>= foregroundActionAt=${foregroundActionAt}; baseline=${statusReadCountBeforeForeground}; âncora oculta=${lastHiddenStatusReadAt})`
         );
         // Fatos seguros do observador — nenhuma leitura corrompida/forânea.
-        expect(latest.method).toBe('GET');
-        expect(latest.sessionFilter).toBe(`eq.${sessionId}`);
+        expect(fresh.method).toBe('GET');
+        expect(fresh.pathname).toBe('/rest/v1/walk_sessions');
+        expect(fresh.sessionFilter).toBe(`eq.${sessionId}`);
+        expect(fresh.timestamp).toBeGreaterThanOrEqual(foregroundActionAt);
       });
 
       // ================================================================
