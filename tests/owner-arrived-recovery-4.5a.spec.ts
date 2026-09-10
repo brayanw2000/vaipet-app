@@ -60,6 +60,21 @@
  *   - DB proofs via admin são auditorias factuais apenas,
  *   - cleanup fail-closed: qualquer erro de cleanup FALHA a suíte (zero
  *     resíduos).
+ *
+ * GEOLOCATION FIXTURE EXPLÍCITA + PREFLIGHT + OBSERVABILIDADE (PATCH T1):
+ *   - Walker context explícito: geolocation { longitude: WALKER_POS.lng,
+ *     latitude: WALKER_POS.lat, accuracy: 10 } + permissions geolocation.
+ *   - Após o Walker estar no app, grantPermissions(['geolocation']) para o
+ *     origin REAL derivado da URL em runtime (não hardcoded; nenhuma outra
+ *     permissão é concedida).
+ *   - GPS PREFLIGHT read-only imediatamente antes do clique "Cheguei ao
+ *     local": navigator.geolocation.getCurrentPosition — NENHUMA RPC, NENHUM
+ *     estado/mutação/navegação/storage. Falha ⇒
+ *     browser_geolocation_preflight_failed (SETUP FAILURE), nunca RED.
+ *   - Observabilidade: console errors GPS/arrival, requestfailed da RPC de
+ *     chegada e resposta RPC factual (HTTP + body) — diagnóstico A–E:
+ *     callback error de geolocation, console GPS error, request failure,
+ *     body false/error, RPC nunca requisitada.
  */
 
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
@@ -87,6 +102,11 @@ const MEETING = { lng: -46.7, lat: -23.6 };
 // (150m + LEAST(_accuracy, 50)) — fixture consistente com os testes
 // certificados 4.4.
 const WALKER_POS = { lng: -46.7001, lat: -23.6001 };
+
+// (T1) Resultado do GPS PREFLIGHT read-only no browser real do Walker.
+type GpsPreflightResult =
+  | { status: 'ok'; latitude: number; longitude: number; accuracy: number }
+  | { status: 'failed'; code: string; message: string };
 
 // Estados ativos (não terminais) do domínio.
 const ACTIVE_STATUSES = ['searching', 'accepted', 'heading_to_pickup', 'arrived', 'in_progress', 'returning'];
@@ -212,6 +232,11 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
   // Observador factual das respostas RPC reais da página (HTTP + body).
   const rpcCalls: Record<string, Array<{ status: number; body: unknown }>> = {};
 
+  // Observabilidade (T1): erros de console GPS/arrival do browser real do
+  // Walker e requestfailed da RPC de chegada — diagnóstico factual A–E.
+  const walkerConsoleErrors: string[] = [];
+  let arriveRequestFailure: string | null = null;
+
   const armRpcObserver = (page: Page, rpcName: string) => {
     page.on('response', (res) => {
       if (!res.url().includes(`/rest/v1/rpc/${rpcName}`)) return;
@@ -221,6 +246,10 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
           rpcCalls[rpcName] = rpcCalls[rpcName] || [];
           rpcCalls[rpcName].push({ status: res.status(), body });
           log(`RPC_OBSERVED ${rpcName} HTTP ${res.status()} body=${JSON.stringify(body)}`);
+          // Diagnóstico D (T1): resposta HTTP body false/error da chegada.
+          if (rpcName === 'petwalker_arrive_pickup' && (res.status() !== 200 || body !== true)) {
+            log(`ARRIVE_RPC_RESPONSE_UNEXPECTED HTTP ${res.status()} body=${JSON.stringify(body)}`);
+          }
         })
         .catch(() => {
           rpcCalls[rpcName] = rpcCalls[rpcName] || [];
@@ -232,6 +261,35 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
   const lastRpc = (rpcName: string) => {
     const calls = rpcCalls[rpcName] || [];
     return calls[calls.length - 1];
+  };
+
+  // (T1) Espera factual pela resposta REAL da petwalker_arrive_pickup
+  // (HTTP 200 + body true, via UI "Cheguei ao local"). Em timeout, falha
+  // com o ÚLTIMO resultado factual observado — nunca um RED inválido:
+  //   A. geolocation callback error  → GPS preflight / console GPS error
+  //   B. console GPS error do produto → walkerConsoleErrors
+  //   C. request failure              → arriveRequestFailure
+  //   D. resposta HTTP body false/error → last_observed_status/body
+  //   E. RPC nunca requisitada        → last_observed_status RPC_NEVER_REQUESTED
+  const waitForRealArriveRpc = async (timeoutMs = 20000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rpc = lastRpc('petwalker_arrive_pickup');
+      if (rpc && rpc.status === 200 && rpc.body === true) return rpc;
+      await walkerPage!.waitForTimeout(250);
+    }
+    const calls = rpcCalls['petwalker_arrive_pickup'] || [];
+    const last = calls[calls.length - 1];
+    const diagnostic = {
+      arrive_rpc_count: calls.length,
+      last_observed_status: last ? String(last.status) : 'RPC_NEVER_REQUESTED',
+      last_observed_body: last ? JSON.stringify(last.body) : 'RPC_NEVER_REQUESTED',
+      request_failed: arriveRequestFailure ?? 'NONE',
+      console_gps_errors: walkerConsoleErrors.length ? [...walkerConsoleErrors] : 'NONE',
+    };
+    throw new Error(
+      `petwalker_arrive_pickup JOURNEY FAILURE — último resultado factual: ${JSON.stringify(diagnostic)}`
+    );
   };
 
   async function auditSession(id: string) {
@@ -297,7 +355,9 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
           viewport: { width: 430, height: 900 },
           locale: 'pt-BR',
           permissions: ['geolocation'],
-          geolocation: { longitude: WALKER_POS.lng, latitude: WALKER_POS.lat },
+          // FIXTURE EXPLÍCITA (T1): posição real do Walker + accuracy
+          // realista — o produto envia _accuracy à petwalker_arrive_pickup.
+          geolocation: { longitude: WALKER_POS.lng, latitude: WALKER_POS.lat, accuracy: 10 },
         });
         ownerCtx = await browser.newContext({
           viewport: { width: 430, height: 900 },
@@ -309,6 +369,31 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         ownerPage = await ownerCtx.newPage();
         await loginViaUi(ownerPage, ownerEmail);
         await loginViaUi(walkerPage, walkerEmail);
+
+        // (T1) Permissão de geolocation EXPLÍCITA para o origin REAL do app
+        // (derivado da URL em runtime — NÃO hardcoded; o origin do backend
+        // Supabase não é o alvo). Nenhuma outra permissão é concedida.
+        const walkerAppOrigin = new URL(walkerPage.url()).origin;
+        await walkerCtx.grantPermissions(['geolocation'], { origin: walkerAppOrigin });
+        log(`geolocation permission explícita para origin do app: ${walkerAppOrigin}`);
+
+        // (T1) Observabilidade: erros de console relevantes a GPS/arrival do
+        // browser real do Walker (ex.: "GPS error:" do callback de erro do
+        // produto, "Error arriving at pickup:").
+        walkerPage.on('console', (msg) => {
+          if (msg.type() !== 'error') return;
+          if (!/GPS|arriv|pickup|geolocation/i.test(msg.text())) return;
+          walkerConsoleErrors.push(msg.text());
+          log(`WALKER_CONSOLE_GPS_ERROR: ${msg.text()}`);
+        });
+        // (T1) Observabilidade: requestfailed da RPC real de chegada.
+        walkerPage.on('requestfailed', (req) => {
+          if (!req.url().includes('/rest/v1/rpc/petwalker_arrive_pickup')) return;
+          const errorText = req.failure()?.errorText ?? 'unknown';
+          arriveRequestFailure = errorText;
+          log(`ARRIVE_REQUESTFAILED: ${errorText}`);
+        });
+
         armRpcObserver(ownerPage, 'create_walk_request');
         armRpcObserver(walkerPage, 'accept_walk_request');
         armRpcObserver(walkerPage, 'petwalker_start_heading');
@@ -561,19 +646,106 @@ test.describe('Phase 4.5A2.3: Owner arrived reload recovery (red proof)', () => 
         //   petwalker_arrive_pickup(_session_id, _lat, _lng, _accuracy)
         const arriveBtn = walkerPage!.getByRole('button', { name: /Cheguei ao local/i });
         await expect(arriveBtn).toBeVisible({ timeout: 45000 });
+
+        // (T1) GPS PREFLIGHT — LEITURA/observação apenas, imediatamente
+        // ANTES do clique real. Prova que o GPS do browser resolve (o
+        // produto depende de navigator.geolocation.getCurrentPosition para
+        // enviar a RPC — se o GPS falhar, a RPC nunca é enviada e um timeout
+        // aqui seria RED inválido). O preflight NÃO chama RPC, NÃO muta
+        // walk_sessions, NÃO muda lifecycle, NÃO navega o produto, NÃO seta
+        // estado e NÃO injeta storage. Falha = SETUP FAILURE
+        // (browser_geolocation_preflight_failed), nunca recovery RED.
+        const gpsPreflight = await walkerPage!.evaluate(
+          (): Promise<GpsPreflightResult> =>
+            new Promise((resolve) => {
+              if (!('geolocation' in navigator)) {
+                resolve({
+                  status: 'failed',
+                  code: 'geolocation_unsupported',
+                  message: 'navigator.geolocation indisponível no browser',
+                });
+                return;
+              }
+              let settled = false;
+              const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                resolve({
+                  status: 'failed',
+                  code: 'geolocation_timeout',
+                  message: 'getCurrentPosition sem callback em 10s',
+                });
+              }, 10000);
+              // Mesma forma de chamada do produto (ActiveWalkSheet): sem
+              // opções — a fixture Playwright responde com a posição exata.
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  if (settled) return;
+                  settled = true;
+                  clearTimeout(timer);
+                  resolve({
+                    status: 'ok',
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                  });
+                },
+                (err) => {
+                  if (settled) return;
+                  settled = true;
+                  clearTimeout(timer);
+                  resolve({
+                    status: 'failed',
+                    code: String(err.code ?? 'unknown'),
+                    message: err.message || String(err),
+                  });
+                }
+              );
+            })
+        );
+
+        if (gpsPreflight.status !== 'ok') {
+          throw new Error(
+            `browser_geolocation_preflight_failed: code=${gpsPreflight.code} message=${gpsPreflight.message}`
+          );
+        }
+        // Coordenadas APROXIMADAS (sem igualdade flutuante exata): fixture
+        // do Walker (~14m do ponto de encontro). Tolerância ~0.002° (~220m)
+        // — detecta posição trocada/incorreta (ex.: default São Paulo do
+        // playwright.config) sem exigir exatidão.
+        const GPS_LAT_TOL = 0.002;
+        const GPS_LNG_TOL = 0.002;
+        if (
+          !Number.isFinite(gpsPreflight.latitude) ||
+          Math.abs(gpsPreflight.latitude - WALKER_POS.lat) > GPS_LAT_TOL
+        ) {
+          throw new Error(
+            `browser_geolocation_preflight_failed: latitude=${gpsPreflight.latitude} fora da faixa esperada ${WALKER_POS.lat} ± ${GPS_LAT_TOL}`
+          );
+        }
+        if (
+          !Number.isFinite(gpsPreflight.longitude) ||
+          Math.abs(gpsPreflight.longitude - WALKER_POS.lng) > GPS_LNG_TOL
+        ) {
+          throw new Error(
+            `browser_geolocation_preflight_failed: longitude=${gpsPreflight.longitude} fora da faixa esperada ${WALKER_POS.lng} ± ${GPS_LNG_TOL}`
+          );
+        }
+        if (!Number.isFinite(gpsPreflight.accuracy) || gpsPreflight.accuracy < 0) {
+          throw new Error(`browser_geolocation_preflight_failed: accuracy inválida=${gpsPreflight.accuracy}`);
+        }
+        log(
+          `GPS preflight OK (read-only): lat=${gpsPreflight.latitude} lng=${gpsPreflight.longitude} accuracy=${gpsPreflight.accuracy}`
+        );
+
         await arriveBtn.click();
 
         // Resposta REAL do petwalker_arrive_pickup: HTTP 200 + body true
         // (a RPC retorna boolean: TRUE quando o UPDATE promoveu a sessão).
-        await expect
-          .poll(
-            () => {
-              const rpc = lastRpc('petwalker_arrive_pickup');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
-            },
-            { timeout: 20000, message: 'petwalker_arrive_pickup HTTP 200 + true (via UI)' }
-          )
-          .toBeTruthy();
+        // Em timeout, waitForRealArriveRpc falha com o ÚLTIMO resultado
+        // factual observado (RPC nunca requisitada / requestfailed /
+        // console GPS error / resposta false) — diagnóstico A–E.
+        await waitForRealArriveRpc();
         log('petwalker_arrive_pickup real observado (HTTP 200 + true, via UI "Cheguei ao local")');
 
         // Backend: MESMA sessão agora arrived, MESMO Walker.
