@@ -34,6 +34,7 @@
     "test:e2e:phase45a:owner-completed-review-recovery": "playwright test tests/owner-completed-review-recovery-4.5a.spec.ts",
     "test:e2e:phase45b:owner-network-gap-recovery": "playwright test tests/owner-network-gap-recovery-4.5b.spec.ts",
     "test:e2e:phase45b:owner-focus-visibility-recovery": "playwright test tests/owner-focus-visibility-recovery-4.5b.spec.ts",
+    "test:e2e:phase45b:owner-auth-rehydration-isolation": "playwright test tests/owner-auth-rehydration-isolation-4.5b.spec.ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
 
   },
