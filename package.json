@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e:walk": "npx playwright test tests/walk-real-e2e.spec.ts tests/walk-concurrency.spec.ts",
-    "test:e2e:walk:matching": "npx playwright test tests/walk-real-e2e.spec.ts -g 'matching:'",
+    "test:e2e:walk:matching": "npx playwright test tests/walk-real-e2e.spec.ts -g \"matching:\"",
     "test:e2e:walk:concurrency": "npx playwright test tests/walk-concurrency.spec.ts",
     "test:e2e:phase41:security": "npx playwright test tests/security-phase41.spec.ts",
     "test:e2e:phase41:operational": "playwright test tests/walk-operation-4.1.spec.ts",

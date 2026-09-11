@@ -230,7 +230,7 @@ test.afterAll(async () => {
 });
 
 
-test("dois petwalkers aceitam simultaneamente: apenas um vence", async () => {
+test("dois petwalkers tentam aceitar a mesma oferta simultaneamente: apenas um aceite é confirmado", async () => {
   test.setTimeout(180_000);
 
   // Matching real (mesma função executada pelo job agendado).
@@ -246,7 +246,7 @@ test("dois petwalkers aceitam simultaneamente: apenas um vence", async () => {
   log(`ofertas geradas: ${offers.map((o) => o.offer_status).join(",")}`);
   expect(offers.filter((o) => o.offer_status === "pending").length).toBeGreaterThanOrEqual(2);
 
-  // Aceites simultâneos, cada um com a própria sessão autenticada.
+  // Tentativas simultâneas de aceite, cada um com a própria sessão autenticada.
   const results = await Promise.allSettled(
     walkers.map((w) => w.client.rpc("accept_walk_request", { _session_id: sessionId })),
   );
