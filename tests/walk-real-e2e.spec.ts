@@ -44,7 +44,22 @@ async function preflightCleanup() {
     );
 
     if (targets.length > 0) {
-      await quickCleanup(targets.map(u => u.id));
+      // Contrato fail-closed atual: cleanup é POR RUN. Agrupar pelos EXATOS
+      // e2e_run_id dos usuários — nunca misturar IDs de runs diferentes,
+      // nunca inventar runId. Alvo E2E sem runId válido = falha explícita.
+      const byRun = new Map<string, string[]>();
+      for (const u of targets) {
+        const runId = u.user_metadata?.e2e_run_id;
+        if (typeof runId !== 'string' || runId.length === 0) {
+          throw new Error(JSON.stringify({ error: 'e2e_run_id_missing', userId: u.id }));
+        }
+        const group = byRun.get(runId) || [];
+        group.push(u.id);
+        byRun.set(runId, group);
+      }
+      for (const [runId, ids] of byRun) {
+        await quickCleanup(ids, runId);
+      }
     }
     if (users.length < perPage) break;
     page++;
@@ -52,7 +67,9 @@ async function preflightCleanup() {
   log("1. preflightCleanup concluído");
 }
 
-async function quickCleanup(ids: string[], runId?: string) {
+async function quickCleanup(ids: string[], runId: string) {
+  // Contrato atual de failClosedCleanup: runId OBRIGATÓRIO (throw runId_missing se ausente).
+  if (!runId) throw new Error(JSON.stringify({ error: 'runId_missing', context: 'quickCleanup' }));
   await failClosedCleanup(admin, ids, runId);
 }
 
@@ -235,6 +252,18 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       log(`8. Pedido criado e confirmado no banco (ID: ${sessId})`);
     });
 
+    await test.step("8.1. cleanup-metadata: tag E2E run na sessão", async () => {
+      // APENAS metadata de limpeza (e2e_test/e2e_run_id) para que o
+      // failClosedCleanup encontre a sessão via .eq('e2e_run_id', runId).
+      // NENHUM campo de ciclo de vida é tocado.
+      const { error: tagErr } = await admin
+        .from("walk_sessions")
+        .update({ e2e_test: true, e2e_run_id: runId })
+        .eq("id", sessId);
+      if (tagErr) throw tagErr;
+      log(`8.1. Sessão ${sessId} marcada com e2e_run_id=${runId} (metadata only)`);
+    });
+
     await test.step("9. backend: request-searching", async () => {
       await expect.poll(async () => {
         const { data } = await admin.from("walk_sessions").select("current_status").eq("id", sessId).single();
@@ -316,7 +345,7 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
     await test.step("cleanup", async () => {
       if (oCtx) await oCtx.context.close();
       if (wCtx) await wCtx.context.close();
-      await quickCleanup([ownerCreds.id, walkerCreds.id]);
+      await quickCleanup([ownerCreds.id, walkerCreds.id], runId);
       log("Cleanup concluído com zero resíduos");
     });
   }

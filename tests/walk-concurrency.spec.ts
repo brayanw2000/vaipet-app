@@ -109,7 +109,13 @@ test.beforeAll(async () => {
     const client = await signedClient(email, password);
     const av = await client.rpc("set_petwalker_availability", { _status: "available" });
     if (av.error) throw av.error;
-    const loc = await client.rpc("update_walker_location", { _lat: pos.lat, _lng: pos.lng, _accuracy: 8 });
+    // Assinatura atual da RPC: _lat, _lng, _accuracy E _captured_at (manutenção de teste).
+    const loc = await client.rpc("update_walker_location", {
+      _lat: pos.lat,
+      _lng: pos.lng,
+      _accuracy: 8,
+      _captured_at: new Date().toISOString(),
+    });
     if (loc.error) throw loc.error;
     walkers.push({ id, client });
   }

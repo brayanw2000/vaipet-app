@@ -767,19 +767,40 @@ test.describe('Phase 4.4: Full Journey Operational E2E (single continuous walk)'
       });
 
       await test.step('owner: solicita retorno pela UI (request-return-button)', async () => {
-        rpcCalls['customer_request_return'] = [];
+        // MANUTENÇÃO 4.4 — observabilidade robusta do customer_request_return:
+        // o observador genérico page.on('response') + res.json() é SENSÍVEL A
+        // CORRIDA de leitura de corpo (Network.getResponseBody pode falhar e o
+        // catch registra 'NON_JSON' — a ausência de body=true NUNCA deve ser
+        // interpretada como "a RPC do produto não aconteceu"). Contrato novo:
+        //   1. REAL clique na UI (request-return-button) — inalterado;
+        //   2. POST real a /rest/v1/rpc/customer_request_return com HTTP 200
+        //      provado deterministicamente (waitForResponse ARMADO ANTES do
+        //      clique — sem corrida de parsing);
+        //   3. body=true é lido como best-effort (NÃO é o gate único);
+        //   4. MUTAÇÃO AUTORITATIVA é o backend: MESMA sessão com
+        //      status === 'returning' && current_status === 'returning'.
         await expect(ownerPage!.getByTestId('request-return-button')).toBeVisible();
+
+        const returnResponsePromise = ownerPage!.waitForResponse(
+          (res) =>
+            res.url().includes('/rest/v1/rpc/customer_request_return') &&
+            res.request().method() === 'POST',
+          { timeout: 20000 }
+        );
+
         await ownerPage!.getByTestId('request-return-button').click();
 
-        await expect
-          .poll(
-            () => {
-              const rpc = lastRpc('customer_request_return');
-              return !!(rpc && rpc.status === 200 && rpc.body === true);
-            },
-            { timeout: 20000, message: 'customer_request_return HTTP 200 + true' }
-          )
-          .toBeTruthy();
+        const returnResponse = await returnResponsePromise;
+        expect(returnResponse.status()).toBe(200);
+
+        // Best-effort: body=true é retido quando legível de forma robusta,
+        // mas nunca é o único gate (a mutação é provada pelo backend abaixo).
+        try {
+          const body = await returnResponse.json();
+          log(`customer_request_return HTTP 200 body=${JSON.stringify(body)}`);
+        } catch {
+          log('customer_request_return HTTP 200 (corpo indisponível para leitura — mutação provada pelo backend)');
+        }
 
         await expect
           .poll(
