@@ -135,6 +135,17 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
   // Coleta diagnóstico D1 (escopo do teste inteiro — visível no finally).
   const diag: Record<string, unknown> = {};
 
+  // Estado diagnóstico de página/UI — atualizado CONTINUAMENTE pelos handlers
+  // e pelo polling, e à PROVA DE TIMEOUT (sobrevive ao finally do teste mesmo
+  // quando o expect.poll de oferta visível falha).
+  const d1PageRpc = { requestCount: 0, httpStatuses: [] as number[] };
+  const d1Ui = {
+    pathname: null as string | null,
+    onlineButtonSeen: false,
+    onlineButtonClicked: 0,
+    acceptButtonVisible: false,
+  };
+
   log(`owner_id: ${ownerCreds.id}`);
   log(`walker_id_esperado: ${walkerCreds.id}`);
 
@@ -399,61 +410,68 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
     });
 
     await test.step("11. walker: offer-visible", async () => {
+      // ORDEM OBRIGATÓRIA (comparabilidade com os runs RED originais):
+      //   1. armar observadores passivos
+      //   2. goto('/petwalker') REAL (a navegação original do teste)
+      //   3. produto monta → observamos as chamadas reais de descoberta
+      //   4. polling existente de UI
       // Observador PASSIVO de rede da página real (sem route/mock/intercept).
-      // Fatos seguros: contagem, método, status HTTP, timestamp. Corpo é
-      // opcional e NUNCA obrigatório (sem corrida CDP de leitura de corpo).
-      let pageRpcCount = 0;
-      const pageRpcStatuses: number[] = [];
+      // Fatos seguros: contagem, método, status HTTP. Corpo é opcional e
+      // NUNCA obrigatório (sem corrida CDP de leitura de corpo).
       wCtx.page.on("request", (req) => {
         try {
           if (new URL(req.url()).pathname === "/rest/v1/rpc/get_available_walk_offers") {
-            pageRpcCount++;
+            d1PageRpc.requestCount++;
           }
         } catch { /* URL inválida — ignorar */ }
       });
       wCtx.page.on("response", (res) => {
         try {
           if (new URL(res.url()).pathname === "/rest/v1/rpc/get_available_walk_offers") {
-            pageRpcStatuses.push(res.status());
+            d1PageRpc.httpStatuses.push(res.status());
           }
         } catch { /* URL inválida — ignorar */ }
       });
 
+      // Navegação REAL restaurada (idêntica ao run original) — nenhuma nova
+      // Page, nenhum reload repetido, nenhuma invocação manual de descoberta.
+      await wCtx.page.goto("/petwalker");
+      expect(new URL(wCtx.page.url()).pathname).toBe("/petwalker");
+
       const onlineBtn = wCtx.page.getByRole('button', { name: /Ficar Online/i });
       const acceptBtn = wCtx.page.locator('[data-testid="walker-accept-button"]');
 
-      let onlineButtonSeen = false;
-      let onlineButtonClicked = 0;
-      let acceptButtonVisible = false;
-
-      await expect.poll(async () => {
-        if (await acceptBtn.isVisible()) {
-          acceptButtonVisible = true;
-          return true;
-        }
-        if (await onlineBtn.isVisible()) {
-          if (!onlineButtonSeen) {
-            onlineButtonSeen = true;
-            log("ONLINE_BUTTON_SEEN");
+      // try/finally SEM catch: o expect original NÃO é engolido — em caso de
+      // timeout o erro propaga, MAS o estado diagnóstico já foi persistido.
+      try {
+        await expect.poll(async () => {
+          if (await acceptBtn.isVisible()) {
+            d1Ui.acceptButtonVisible = true;
+            return true;
           }
-          // Comportamento preservado do run original: clicar quando visível.
-          await onlineBtn.click().catch(() => {});
-          onlineButtonClicked++;
-          log(`ONLINE_BUTTON_CLICKED (total=${onlineButtonClicked})`);
-          await wCtx.page.waitForTimeout(2000);
-        }
-        return await acceptBtn.isVisible();
-      }, { timeout: 45000, message: "Oferta visível no PetWalker" }).toBeTruthy();
+          if (await onlineBtn.isVisible()) {
+            if (!d1Ui.onlineButtonSeen) {
+              d1Ui.onlineButtonSeen = true;
+              log("ONLINE_BUTTON_SEEN");
+            }
+            // Comportamento preservado do run original: clicar quando visível.
+            await onlineBtn.click().catch(() => {});
+            d1Ui.onlineButtonClicked++;
+            log(`ONLINE_BUTTON_CLICKED (total=${d1Ui.onlineButtonClicked})`);
+            await wCtx.page.waitForTimeout(2000);
+          }
+          return await acceptBtn.isVisible();
+        }, { timeout: 45000, message: "Oferta visível no PetWalker" }).toBeTruthy();
+      } finally {
+        // Persiste PAGE_RPC/UI ANTES de qualquer propagação de erro —
+        // Classificação CASE B vs CASE C permanece possível no timeout.
+        d1Ui.pathname = new URL(wCtx.page.url()).pathname;
+        diag.pageRpc = { requestCount: d1PageRpc.requestCount, httpStatuses: [...d1PageRpc.httpStatuses] };
+        diag.ui = { ...d1Ui };
+        log(`PAGE_RPC ${JSON.stringify(diag.pageRpc)}`);
+        log(`UI ${JSON.stringify(diag.ui)}`);
+      }
 
-      // Estado factual da UI no momento da resolução.
-      diag.ui = {
-        pathname: new URL(wCtx.page.url()).pathname,
-        acceptButtonVisible,
-      };
-
-      diag.pageRpc = { requestCount: pageRpcCount, httpStatuses: pageRpcStatuses };
-      log(`PAGE_RPC ${JSON.stringify(diag.pageRpc)}`);
-      log(`UI ${JSON.stringify(diag.ui)}`);
       log("11. Oferta visível no PetWalker");
     });
 
@@ -499,8 +517,10 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       log(`DB_OFFER_EXISTS=${diag.dbOfferExists ?? false}`);
       log("WALKER_PROFILE: " + JSON.stringify(diag.walkerProfile ?? null));
       log("DIRECT_RPC: " + JSON.stringify(diag.directRpc ?? null));
-      log("PAGE_RPC: " + JSON.stringify(diag.pageRpc ?? null));
-      log("UI: " + JSON.stringify(diag.ui ?? null));
+      // PAGE_RPC/UI vêm das variáveis de escopo do teste (d1PageRpc/d1Ui),
+      // atualizadas continuamente — NUNCA null apenas porque o poll falhou.
+      log("PAGE_RPC: " + JSON.stringify(d1PageRpc));
+      log("UI: " + JSON.stringify(d1Ui));
 
       if (oCtx) await oCtx.context.close();
       if (wCtx) await wCtx.context.close();
