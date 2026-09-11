@@ -65,28 +65,52 @@ const Auth = () => {
     isOTPModeRef.current = isOTPMode;
   }, [isOTPMode]);
 
+  // Recuperação de senha tem prioridade sobre a restauração do cadastro pendente.
+  const isRecoveryModeRef = useRef(false);
+  // Época do fluxo OTP: cancelamento/conclusão invalidam respostas antigas
+  // de restauração que estejam em voo.
+  const otpFlowEpochRef = useRef(0);
+  // Guarda de concorrência do reenvio de OTP (um supabase.auth.resend por vez).
+  const [isResending, setIsResending] = useState(false);
+  const isResendingRef = useRef(false);
+
   // Restaura o cadastro pendente (etapa OTP) quando o app volta ao primeiro plano.
   // No celular o usuário sai para abrir o Gmail e pegar o código; o iOS pode
   // descartar a aba em segundo plano e a página recarrega — sem persistência,
   // o usuário caía de volta na tela de login/cadastro.
   // Roda em mount, pageshow e visibilitychange; NUNCA restaura senha ou código OTP.
   useEffect(() => {
+    let disposed = false;
+    let restoreToken = 0;
     const tryRestore = () => {
+      // Recuperação de senha tem prioridade absoluta sobre a restauração.
+      if (isRecoveryModeRef.current) return;
       const pending = readPendingSignup();
       if (!pending) return;
+      const epoch = otpFlowEpochRef.current;
+      const token = ++restoreToken;
       supabase.auth
         .getSession()
         .then(({ data: { session } }) => {
+          // Resposta antiga nunca reabre a tela OTP: componente desmontado,
+          // restauração mais recente em curso, fluxo cancelado/concluído
+          // (época mudou) ou recuperação de senha assumiu.
+          if (disposed) return;
+          if (token !== restoreToken) return;
+          if (epoch !== otpFlowEpochRef.current) return;
+          if (isRecoveryModeRef.current) return;
           if (session) {
             // Sessão real ativa → nada a restaurar; registro pendente é resíduo.
             clearPendingSignup();
             return;
           }
           if (isOTPModeRef.current) return;
+          // O registro pendente deve ainda existir e ser o mesmo capturado
+          // (não foi cancelado, concluído ou substituído por outro cadastro).
+          const current = readPendingSignup();
+          if (!current || current.email !== pending.email) return;
           setEmail(pending.email);
           setSignupIntent(pending.signupIntent);
-          setFullName(pending.fullName);
-          setPhone(pending.phone);
           setIsRegistering(true);
           setIsOTPMode(true);
         })
@@ -96,15 +120,20 @@ const Auth = () => {
     window.addEventListener('pageshow', tryRestore);
     document.addEventListener('visibilitychange', tryRestore);
     return () => {
+      disposed = true;
       window.removeEventListener('pageshow', tryRestore);
       document.removeEventListener('visibilitychange', tryRestore);
     };
   }, []);
 
+  // Recuperação de senha vence: com /auth?type=recovery o componente renderiza
+  // "Nova Senha" e descarta o cadastro pendente (resíduo) — nunca reabre OTP.
   useEffect(() => {
     const type = searchParams.get('type');
     if (type === 'recovery') {
+      isRecoveryModeRef.current = true;
       setIsRecoveryMode(true);
+      clearPendingSignup();
     }
   }, [searchParams]);
 
@@ -172,11 +201,11 @@ const Auth = () => {
 
         // Cadastro novo aguardando verificação: persiste o estado pendente
         // (e-mail/intenção/etapa — nunca senha nem código OTP) e mostra OTP.
+        // Mínimo indispensável para reabrir a etapa OTP: e-mail e intenção.
+        // Nunca senha, código OTP, nome ou telefone.
         savePendingSignup({
           email,
           signupIntent: signupIntent ?? 'pet_owner',
-          fullName,
-          phone,
         });
         setIsOTPMode(true);
         toast.success('Cadastro realizado! Enviamos um código para seu e-mail.');
@@ -238,6 +267,8 @@ const Auth = () => {
         type: 'signup'
       });
       if (error) throw error;
+      // Conclusão do fluxo invalida respostas antigas de restauração em voo.
+      otpFlowEpochRef.current += 1;
       clearPendingSignup();
       toast.success('E-mail verificado com sucesso!');
       navigate('/inicio');
@@ -250,6 +281,8 @@ const Auth = () => {
 
   // Cancelamento explícito da verificação: descarta o cadastro pendente.
   const handleCancelOTP = () => {
+    // Cancelamento invalida respostas antigas de restauração em voo.
+    otpFlowEpochRef.current += 1;
     clearPendingSignup();
     setOtpCode('');
     setIsOTPMode(false);
@@ -257,26 +290,27 @@ const Auth = () => {
   };
 
   const handleResendOTP = async () => {
-    setIsLoading(true);
+    // Guarda contra cliques concorrentes: apenas um resend por vez.
+    if (isResendingRef.current || isLoading) return;
+    isResendingRef.current = true;
+    setIsResending(true);
     try {
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
       });
       if (error) throw error;
-      // Reenvio atualiza o registro pendente (renova o TTL do estado local;
-      // o próprio Supabase limita a frequência de reenvio).
+      // Reenvio renova o TTL do registro pendente local (mínimo indispensável).
       savePendingSignup({
         email,
         signupIntent: signupIntent ?? 'pet_owner',
-        fullName,
-        phone,
       });
       toast.success('Novo código enviado!');
     } catch (error: any) {
       toast.error(translateError(error));
     } finally {
-      setIsLoading(false);
+      isResendingRef.current = false;
+      setIsResending(false);
     }
   };
 
@@ -381,7 +415,11 @@ const Auth = () => {
                   </AnimatePresence>
                 </button>
               </form>
-              <button onClick={handleResendOTP} className="text-button">
+              <button
+                onClick={handleResendOTP}
+                className="text-button"
+                disabled={isResending || isLoading}
+              >
                 Não recebeu o código? Enviar novamente
               </button>
               <button onClick={handleCancelOTP} className="text-button" data-testid="otp-cancel">

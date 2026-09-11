@@ -11,8 +11,6 @@ const KEY = "vaipet_pending_signup_v1";
 const validState = {
   email: "dono@teste.com",
   signupIntent: "pet_owner" as const,
-  fullName: "Maria Teste",
-  phone: "11999999999",
 };
 
 describe("pendingSignup — persistência do cadastro pendente (OTP)", () => {
@@ -45,13 +43,27 @@ describe("pendingSignup — persistência do cadastro pendente (OTP)", () => {
     expect(raw).not.toContain("password");
     expect(raw).not.toContain("senha");
     expect(raw).not.toContain("otp");
+    // Mínimo indispensável: exatamente email + signupIntent + savedAt.
     expect(Object.keys(JSON.parse(raw))).toEqual([
       "email",
       "signupIntent",
-      "fullName",
-      "phone",
       "savedAt",
     ]);
+  });
+
+  it("NUNCA persiste dados de perfil (nome/telefone) — registro legado é invalidado", () => {
+    savePendingSignup(validState);
+    const raw = localStorage.getItem(KEY) ?? "";
+    expect(raw).not.toContain("fullName");
+    expect(raw).not.toContain("phone");
+
+    // Registro legado (ou adulterado) com campos extras é descartado e removido.
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ ...validState, fullName: "Maria", phone: "119", savedAt: Date.now() }),
+    );
+    expect(readPendingSignup()).toBeNull();
+    expect(localStorage.getItem(KEY)).toBeNull();
   });
 
   it("expira pelo TTL (1h — expiração do OTP no Supabase) e descarta sozinho", () => {
@@ -82,5 +94,15 @@ describe("pendingSignup — persistência do cadastro pendente (OTP)", () => {
 
     localStorage.setItem(KEY, JSON.stringify({ ...validState, email: "" }));
     expect(readPendingSignup()).toBeNull();
+  });
+
+  it("descarta savedAt não-numérico (timestamp deve ser finito)", () => {
+    localStorage.setItem(KEY, JSON.stringify({ ...validState, savedAt: "agora" }));
+    expect(readPendingSignup()).toBeNull();
+
+    // NaN/Infinity não são serializáveis em JSON — viram null e são rejeitados.
+    localStorage.setItem(KEY, JSON.stringify({ ...validState, savedAt: null }));
+    expect(readPendingSignup()).toBeNull();
+    expect(localStorage.getItem(KEY)).toBeNull();
   });
 });

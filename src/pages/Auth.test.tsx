@@ -1,6 +1,13 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  cleanup,
+  act,
+} from "@testing-library/react";
 import Auth from "./Auth";
 import {
   savePendingSignup,
@@ -19,6 +26,8 @@ const h = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   navigate: vi.fn(),
+  // useSearchParams é configurável por teste (ex.: /auth?type=recovery).
+  searchParams: new URLSearchParams(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -34,16 +43,16 @@ vi.mock("sonner", () => ({
 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => h.navigate,
-  useSearchParams: () => [new URLSearchParams()],
+  useSearchParams: () => [h.searchParams],
   Link: (props: { to: string; children?: React.ReactNode }) =>
     React.createElement("a", { href: props.to }, props.children),
 }));
 
+// Forma MÍNIMA persistida: e-mail + intenção + savedAt (gerado no save).
+// Nunca nome, telefone, senha ou código OTP.
 const PENDING = {
   email: "dono@teste.com",
   signupIntent: "pet_owner" as const,
-  fullName: "Maria Teste",
-  phone: "11999999999",
 };
 
 const noSession = () => h.getSession.mockResolvedValue({ data: { session: null } });
@@ -95,6 +104,7 @@ describe("Auth — fluxo de cadastro OTP", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    h.searchParams = new URLSearchParams();
     noSession();
   });
 
@@ -135,6 +145,82 @@ describe("Auth — fluxo de cadastro OTP", () => {
       () => expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
       WAIT,
     );
+  });
+
+  it("recuperação de senha (/auth?type=recovery) vence: OTP não aparece e pendente é limpo", async () => {
+    savePendingSignup(PENDING);
+    h.searchParams = new URLSearchParams("type=recovery");
+
+    render(<Auth />);
+
+    await waitFor(
+      () => expect(screen.getByText("Nova Senha")).toBeInTheDocument(),
+      WAIT,
+    );
+    expect(screen.queryByText("Verificar E-mail")).not.toBeInTheDocument();
+    // Cadastro pendente é resíduo na recuperação — descartado.
+    expect(readPendingSignup()).toBeNull();
+  });
+
+  it("resposta atrasada de getSession após cancelamento NÃO reabre a tela OTP", async () => {
+    savePendingSignup(PENDING);
+    noSession();
+
+    render(<Auth />);
+    await waitFor(
+      () => expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+      WAIT,
+    );
+
+    // Segunda restauração (visibilitychange) com resposta em atraso.
+    let resolveLate!: (value: { data: { session: null } }) => void;
+    h.getSession.mockImplementation(
+      () =>
+        new Promise<{ data: { session: null } }>((resolve) => {
+          resolveLate = resolve;
+        }),
+    );
+    fireEvent(document, new Event("visibilitychange"));
+    expect(h.getSession).toHaveBeenCalledTimes(2);
+
+    // Usuário cancela enquanto a resposta atrasada está em voo.
+    fireEvent.click(screen.getByTestId("otp-cancel"));
+    await waitFor(
+      () => expect(screen.getByText("Entrar no VaiPet")).toBeInTheDocument(),
+      WAIT,
+    );
+
+    // A resposta antiga chega agora — jamais pode reabrir a OTP.
+    await act(async () => {
+      resolveLate({ data: { session: null } });
+    });
+    expect(screen.queryByText("Verificar E-mail")).not.toBeInTheDocument();
+    expect(readPendingSignup()).toBeNull();
+  });
+
+  it("componente desmontado antes da resolução: nenhuma atualização tardia", async () => {
+    savePendingSignup(PENDING);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    let resolveLate!: (value: { data: { session: null } }) => void;
+    h.getSession.mockImplementation(
+      () =>
+        new Promise<{ data: { session: null } }>((resolve) => {
+          resolveLate = resolve;
+        }),
+    );
+
+    const { unmount } = render(<Auth />);
+    expect(h.getSession).toHaveBeenCalledTimes(1);
+    unmount();
+
+    await act(async () => {
+      resolveLate({ data: { session: null } });
+    });
+
+    // Nenhum setState tardio: sem erro/warning de atualização pós-desmonte.
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 
   it("não restaura quando já existe sessão ativa e limpa o registro pendente", async () => {
@@ -252,7 +338,38 @@ describe("Auth — fluxo de cadastro OTP", () => {
     expect(screen.queryByText("Verificar E-mail")).not.toBeInTheDocument();
   });
 
-  it("senha e código OTP nunca são persistidos", async () => {
+  it("dois cliques rápidos em reenviar disparam apenas UMA chamada", async () => {
+    savePendingSignup(PENDING);
+    let resolveResend!: (value: { error: null }) => void;
+    h.resend.mockImplementation(
+      () =>
+        new Promise<{ error: null }>((resolve) => {
+          resolveResend = resolve;
+        }),
+    );
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    const resendBtn = screen.getByRole("button", { name: /Enviar novamente/i });
+    expect(resendBtn).toBeEnabled();
+
+    fireEvent.click(resendBtn);
+    fireEvent.click(resendBtn);
+
+    expect(h.resend).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveResend({ error: null });
+    });
+    // Guarda liberada somente após a conclusão da primeira chamada.
+    await waitFor(() => expect(resendBtn).toBeEnabled());
+    expect(h.resend).toHaveBeenCalledTimes(1);
+  });
+
+  it("nome, telefone, senha e OTP nunca são persistidos — storage mínimo (email/intenção/savedAt)", async () => {
     h.signUp.mockResolvedValue({
       data: { session: null, user: { identities: [{ provider: "email" }] } },
       error: null,
@@ -269,7 +386,19 @@ describe("Auth — fluxo de cadastro OTP", () => {
     expect(raw).not.toContain("senha123");
     expect(raw).not.toContain("password");
     expect(raw).not.toContain("otp");
+    expect(raw).not.toContain("Novo Usuário");
+    expect(raw).not.toContain("11988887777");
+    expect(raw).not.toContain("fullName");
+    expect(raw).not.toContain("phone");
     expect(raw).toContain("seguro@teste.com");
+
+    // Estrutura exata: apenas email, signupIntent e savedAt.
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual([
+      "email",
+      "savedAt",
+      "signupIntent",
+    ]);
     clearPendingSignup();
   });
 });
