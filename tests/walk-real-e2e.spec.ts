@@ -485,36 +485,75 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       log("11. Oferta visível no PetWalker");
     });
 
-    await test.step("12. walker: accept-via-ui", async () => {
+    await test.step("12. walker: accept-via-ui (terminal do matching)", async () => {
+      // ORDEM CORRETA (Patch T1): o escopo deste teste termina no ACEITE.
+      // O botão "Iniciar deslocamento" executa petwalker_start_heading e
+      // avança accepted → heading_to_pickup; clicá-lo ANTES de provar o
+      // backend accepted invalidava a asserção de aceite (RED falso
+      // determinístico). "Iniciar deslocamento" NÃO é clicado aqui —
+      // heading pertence aos testes de ciclo de vida 4.4/4.5.
       const acceptBtn = wCtx.page.locator('[data-testid="walker-accept-button"]');
+
+      // Prova de resposta ARMADA ANTES do clique (determinística, sem
+      // corrida de parsing de corpo): POST real à RPC de aceite.
+      const acceptResponsePromise = wCtx.page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === "/rest/v1/rpc/accept_walk_request" &&
+          res.request().method() === "POST",
+        { timeout: 20000 }
+      );
+
       await acceptBtn.click();
-      
-      const manageBtn = wCtx.page.getByRole('button', { name: /Iniciar deslocamento|Gerenciar Passeio/i });
-      await expect(manageBtn).toBeVisible({ timeout: 15000 });
-      await manageBtn.click();
 
-      await expect(wCtx.page).toHaveURL(/\/petwalker\/passeio\/.*/, { timeout: 20000 });
-      log("12. Aceite realizado pela interface e navegação iniciada");
+      const acceptResponse = await acceptResponsePromise;
+      expect(acceptResponse.status()).toBe(200);
+      // Corpo é best-effort (NUNCA requisito frágil de leitura CDP):
+      try {
+        const body = await acceptResponse.json();
+        log(`accept_walk_request HTTP 200 body=${JSON.stringify(body)}`);
+      } catch {
+        log("accept_walk_request HTTP 200 (corpo indisponível para leitura)");
+      }
+
+      // AUTORIDADE DE BACKEND antes de qualquer avanço de ciclo de vida:
+      // MESMA sessão, accepted, walker correto (status + current_status).
+      await expect
+        .poll(
+          async () => {
+            const s = await admin
+              .from("walk_sessions")
+              .select("id, status, current_status, walker_id")
+              .eq("id", sessId)
+              .single();
+            return (
+              s.data?.id === sessId &&
+              s.data?.status === "accepted" &&
+              s.data?.current_status === "accepted" &&
+              s.data?.walker_id === walkerCreds.id
+            );
+          },
+          { message: "accepted + walker_id no banco", timeout: 20000 }
+        )
+        .toBeTruthy();
+      const s = await admin
+        .from("walk_sessions")
+        .select("id, status, current_status, walker_id")
+        .eq("id", sessId)
+        .single();
+      log(`12. aceite REAL: session_id=${s.data?.id} status=${s.data?.status} current_status=${s.data?.current_status} walker_id=${s.data?.walker_id}`);
+
+      // PROVA DE UI (refreshActiveRequest funcionou): a apresentação de
+      // aceite do ActiveWalkSheet. VISIBILIDADE apenas — o botão
+      // "Iniciar deslocamento" NÃO é clicado neste teste.
+      await expect(
+        wCtx.page.getByRole("button", { name: /^Iniciar deslocamento$/i })
+      ).toBeVisible({ timeout: 15000 });
+      log("12. UI reflete aceite: botão 'Iniciar deslocamento' visível (NÃO clicado)");
     });
 
-    await test.step("13. backend: acceptance-confirmed", async () => {
-      let walkerIdGravado = "";
-      let statusDepois = "";
-      await expect.poll(async () => {
-        const { data } = await admin.from("walk_sessions").select("current_status, walker_id").eq("id", sessId).single();
-        statusDepois = data?.current_status || "";
-        walkerIdGravado = data?.walker_id || "";
-        return statusDepois === "accepted" && walkerIdGravado === walkerCreds.id;
-      }, { message: "Confirmando walker_id e status no banco", timeout: 20000 }).toBeTruthy();
-      
+    await test.step("13. final-certification", async () => {
       log(`session_id: ${sessId}`);
-      log(`status_depois: ${statusDepois}`);
-      log(`walker_id_gravado: ${walkerIdGravado}`);
-      log(`URL final: ${wCtx.page.url()}`);
-      log("13. Banco confirmado");
-    });
-
-    await test.step("14. final-certification", async () => {
+      log(`URL final (sem navegação para passeio): ${wCtx.page.url()}`);
       log("MATCHING_E2E_COMPLETED");
       expect(true).toBeTruthy();
     });
