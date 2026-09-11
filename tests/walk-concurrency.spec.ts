@@ -109,12 +109,14 @@ test.beforeAll(async () => {
     const client = await signedClient(email, password);
     const av = await client.rpc("set_petwalker_availability", { _status: "available" });
     if (av.error) throw av.error;
-    // Assinatura atual da RPC: _lat, _lng, _accuracy E _captured_at (manutenção de teste).
+    // Contrato REAL da RPC (fase42_patch1f): _captured_at é BIGINT em EPOCH
+    // MILISSEGUNDOS — o caller de produção (PetwalkerGpsProvider.tsx) envia
+    // geolocation pos.timestamp, que é a mesma unidade de Date.now().
     const loc = await client.rpc("update_walker_location", {
       _lat: pos.lat,
       _lng: pos.lng,
       _accuracy: 8,
-      _captured_at: new Date().toISOString(),
+      _captured_at: Date.now(),
     });
     if (loc.error) throw loc.error;
     walkers.push({ id, client });
