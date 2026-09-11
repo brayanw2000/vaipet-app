@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables, Database } from '@/integrations/supabase/types';
+import { clearPendingSignup } from '@/lib/pendingSignup';
 
 type AppRole = Database['public']['Enums']['app_role'];
 type SignupIntent = Database['public']['Enums']['signup_intent_type'];
@@ -336,6 +337,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [authStatus, user, profileStatus, fetchProfile]);
 
   const signOut = async () => {
+    // Limpa estado de cadastro pendente (fluxo OTP) ao encerrar a sessão.
+    clearPendingSignup();
     if (profileAbortControllerRef.current) profileAbortControllerRef.current.abort();
     if (rolesAbortControllerRef.current) rolesAbortControllerRef.current.abort();
     if (appAbortControllerRef.current) appAbortControllerRef.current.abort();

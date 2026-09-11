@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { readPendingSignup, savePendingSignup, clearPendingSignup } from "@/lib/pendingSignup";
 import './Auth.css';
 
 const GoogleIcon = () => (
@@ -58,6 +59,48 @@ const Auth = () => {
     identifyUserRole();
   }, [email, isRegistering, isForgotPassword, isRecoveryMode, isOTPMode]);
 
+  // Reflete o modo OTP atual sem acoplar o efeito de restauração a mudanças de estado.
+  const isOTPModeRef = useRef(false);
+  useEffect(() => {
+    isOTPModeRef.current = isOTPMode;
+  }, [isOTPMode]);
+
+  // Restaura o cadastro pendente (etapa OTP) quando o app volta ao primeiro plano.
+  // No celular o usuário sai para abrir o Gmail e pegar o código; o iOS pode
+  // descartar a aba em segundo plano e a página recarrega — sem persistência,
+  // o usuário caía de volta na tela de login/cadastro.
+  // Roda em mount, pageshow e visibilitychange; NUNCA restaura senha ou código OTP.
+  useEffect(() => {
+    const tryRestore = () => {
+      const pending = readPendingSignup();
+      if (!pending) return;
+      supabase.auth
+        .getSession()
+        .then(({ data: { session } }) => {
+          if (session) {
+            // Sessão real ativa → nada a restaurar; registro pendente é resíduo.
+            clearPendingSignup();
+            return;
+          }
+          if (isOTPModeRef.current) return;
+          setEmail(pending.email);
+          setSignupIntent(pending.signupIntent);
+          setFullName(pending.fullName);
+          setPhone(pending.phone);
+          setIsRegistering(true);
+          setIsOTPMode(true);
+        })
+        .catch(() => {});
+    };
+    tryRestore();
+    window.addEventListener('pageshow', tryRestore);
+    document.addEventListener('visibilitychange', tryRestore);
+    return () => {
+      window.removeEventListener('pageshow', tryRestore);
+      document.removeEventListener('visibilitychange', tryRestore);
+    };
+  }, []);
+
   useEffect(() => {
     const type = searchParams.get('type');
     if (type === 'recovery') {
@@ -92,7 +135,7 @@ const Auth = () => {
           toast.error('As senhas não coincidem');
           return;
         }
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -104,11 +147,43 @@ const Auth = () => {
           }
         });
         if (error) throw error;
+
+        // Contrato Supabase ("Confirm email" habilitado): para e-mail JÁ
+        // cadastrado, signUp retorna HTTP 200 sem error, sem sessão e com
+        // user.identities vazio — e NENHUM novo e-mail/OTP é enviado.
+        // Só existe fluxo real de verificação quando NÃO há sessão e existe
+        // identidade de e-mail pendente.
+        const emailIdentity = data.user?.identities?.some(
+          (identity) => identity.provider === 'email'
+        );
+        if (data.session || !emailIdentity) {
+          // Sem fluxo válido de verificação → NUNCA mostrar a tela OTP.
+          clearPendingSignup();
+          if (data.session) {
+            // Confirmação de e-mail desabilitada: cadastro direto com sessão.
+            navigate('/inicio');
+            return;
+          }
+          toast.error('Este e-mail já está cadastrado. Use "Entrar" ou recupere sua senha abaixo.');
+          setIsRegistering(false);
+          setIsOTPMode(false);
+          return;
+        }
+
+        // Cadastro novo aguardando verificação: persiste o estado pendente
+        // (e-mail/intenção/etapa — nunca senha nem código OTP) e mostra OTP.
+        savePendingSignup({
+          email,
+          signupIntent: signupIntent ?? 'pet_owner',
+          fullName,
+          phone,
+        });
         setIsOTPMode(true);
         toast.success('Cadastro realizado! Enviamos um código para seu e-mail.');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        clearPendingSignup();
         navigate('/inicio');
       }
     } catch (error: any) {
@@ -163,6 +238,7 @@ const Auth = () => {
         type: 'signup'
       });
       if (error) throw error;
+      clearPendingSignup();
       toast.success('E-mail verificado com sucesso!');
       navigate('/inicio');
     } catch (error: any) {
@@ -170,6 +246,14 @@ const Auth = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Cancelamento explícito da verificação: descarta o cadastro pendente.
+  const handleCancelOTP = () => {
+    clearPendingSignup();
+    setOtpCode('');
+    setIsOTPMode(false);
+    setIsRegistering(false);
   };
 
   const handleResendOTP = async () => {
@@ -180,6 +264,14 @@ const Auth = () => {
         email,
       });
       if (error) throw error;
+      // Reenvio atualiza o registro pendente (renova o TTL do estado local;
+      // o próprio Supabase limita a frequência de reenvio).
+      savePendingSignup({
+        email,
+        signupIntent: signupIntent ?? 'pet_owner',
+        fullName,
+        phone,
+      });
       toast.success('Novo código enviado!');
     } catch (error: any) {
       toast.error(translateError(error));
@@ -291,6 +383,9 @@ const Auth = () => {
               </form>
               <button onClick={handleResendOTP} className="text-button">
                 Não recebeu o código? Enviar novamente
+              </button>
+              <button onClick={handleCancelOTP} className="text-button" data-testid="otp-cancel">
+                Voltar para o login
               </button>
             </motion.div>
           ) : isRecoveryMode ? (
