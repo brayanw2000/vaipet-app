@@ -175,27 +175,22 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       await expect(bottomSheet).toBeVisible({ timeout: 15000 });
     });
 
-    await test.step("4. owner: select-pet", async () => {
-      const petLabel = oCtx.page.getByText(petName).first();
-      await expect(petLabel).toBeVisible({ timeout: 15000 });
-      
-      const continueBtn = oCtx.page.locator('button').filter({ hasText: /Selecione|Continuar/i }).last();
+    // Contrato CERTIFICADO de seleção de pet (idêntico aos 4.5A/4.5B):
+    //   pet-selection-card visível → confirm-pet-selection habilitado →
+    //   UM clique de confirmação. Com o pet ÚNICO do fixture E2E, o produto
+    //   AUTO-SELECIONA — NÃO clicar no card (clicar em elementos aninhados
+    //   do MESMO card alternava a seleção repetidamente — fonte da flakiness
+    //   do run combinado).
+    await test.step("4. owner: select-pet (contrato certificado)", async () => {
+      const petCard = oCtx.page.getByTestId("pet-selection-card").first();
+      await expect(petCard).toBeVisible({ timeout: 15000 });
+      // O texto do pet do fixture é verificado SEM cliques amplos/aninhados.
+      await expect(petCard.getByText(petName)).toBeVisible({ timeout: 15000 });
 
-      await expect.poll(async () => {
-          const targets = oCtx.page.locator('div, button, span, p').filter({ hasText: petName });
-          const count = await targets.count();
-          for (let i = 0; i < count; i++) {
-              await targets.nth(i).click().catch(() => {});
-          }
-          const text = await continueBtn.innerText();
-          return text.includes('Continuar') && !text.includes('Selecione');
-      }, { timeout: 30000, message: "Pet selecionado" }).toBeTruthy();
-    });
-
-    await test.step("5. owner: select-pet-confirm", async () => {
-      const continueBtn = oCtx.page.locator('button').filter({ hasText: /^Continuar$/ }).last();
-      await expect(continueBtn).toBeEnabled({ timeout: 10000 });
-      await continueBtn.click();
+      const confirmPet = oCtx.page.getByTestId("confirm-pet-selection");
+      await expect(confirmPet).toBeEnabled({ timeout: 15000 });
+      await confirmPet.click(); // exatamente UM clique de confirmação
+      log("4. Pet selecionado pelo contrato certificado (card visível, confirm habilitado, 1 clique)");
     });
 
     await test.step("6. owner: select-walk-type", async () => {
