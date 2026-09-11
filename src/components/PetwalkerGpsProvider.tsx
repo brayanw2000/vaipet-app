@@ -5,7 +5,11 @@ import { toast } from 'sonner';
 import { PetwalkerGpsContext, GpsStatus } from '@/contexts/PetwalkerGpsContext';
 
 export const PetwalkerGpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, profile } = useAuth();
+  // Autoridade canônica de papel: user_roles (RBAC), exposto por useAuth como
+  // `roles` — a MESMA fonte usada por PetwalkerProtectedRoute/hasRole.
+  // signup_intent é intenção de cadastro/onboarding e NUNCA concede ou nega
+  // autoridade operacional de PetWalker por si só.
+  const { user, roles } = useAuth();
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [status, setStatus] = useState<GpsStatus>('requesting');
@@ -16,7 +20,10 @@ export const PetwalkerGpsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastUpdateRef = useRef<number>(0);
   const UPDATE_INTERVAL = 10000; // 10s throttle per Phase 4.2 specs
 
-  const isPetwalker = profile?.signup_intent === 'petwalker';
+  // Membro canônico de user_roles (RBAC). Quando o AuthProvider carregar os
+  // papéis de forma assíncrona (roles: [] → ['petwalker']), este valor muda e
+  // o efeito de autoridade abaixo reexecuta naturalmente — sem polling.
+  const isPetwalker = roles.includes('petwalker');
 
   // Authority: Tracking is active when Petwalker is approved AND (available OR has active walk)
   useEffect(() => {
