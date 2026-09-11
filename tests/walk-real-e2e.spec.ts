@@ -351,12 +351,17 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
         .eq("id", walkerCreds.id)
         .single();
       if (pErr) throw pErr;
-      const { data: role, error: rErr } = await admin
+      // user_roles é MULTI-LINHA no modelo RBAC atual (PGRST116 provou:
+      // "Results contain 2 rows" para o mesmo user_id). Leitura em ARRAY
+      // — .single()/.maybeSingle() são INVÁLIDOS aqui. A lista factual
+      // completa é registrada; nada é deduplicado nem escolhido como
+      // "o papel". A exigência é apenas a pertinência de "petwalker".
+      const { data: roleRows, error: rErr } = await admin
         .from("user_roles")
         .select("role")
-        .eq("user_id", walkerCreds.id)
-        .maybeSingle();
+        .eq("user_id", walkerCreds.id);
       if (rErr) throw rErr;
+      const roles = (roleRows ?? []).map((r) => r.role);
       const { data: wp, error: wErr } = await admin
         .from("petwalker_profiles")
         .select("user_id, approval_status, availability_status, is_accepting_requests, current_walk_id, service_radius_km")
@@ -365,15 +370,20 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       if (wErr) throw wErr;
       diag.walkerProfile = {
         signup_intent: prof.signup_intent,
-        role: role?.role ?? null,
+        roles,
+        roleCount: roles.length,
         approval_status: wp.approval_status,
         availability_status: wp.availability_status,
         is_accepting_requests: wp.is_accepting_requests,
         current_walk_id: wp.current_walk_id,
         service_radius_km: wp.service_radius_km,
       };
+      log(`D1.2 walker roles: ${JSON.stringify(roles)} (roleCount=${roles.length})`);
       log(`D1.2 perfil do walker: ${JSON.stringify(diag.walkerProfile)}`);
       // Fatos certificados do setup (SÓ LEITURA — nada é mutado aqui).
+      // Papel: apenas PERTINÊNCIA — múltiplos papéis legítimos NÃO falham;
+      // duplicatas idênticas são reportadas como fatos (lista + contagem).
+      expect(roles).toContain("petwalker");
       expect(wp.approval_status).toBe("approved");
       expect(wp.availability_status).toBe("available");
       expect(wp.is_accepting_requests).toBe(true);
