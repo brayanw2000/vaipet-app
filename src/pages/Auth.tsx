@@ -38,7 +38,11 @@ const Auth = () => {
   const [phone, setPhone] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [otpCode, setOtpCode] = useState('');
+  // OTP: seis posições independentes (edição confiável por dígito).
+  // O código final enviado ao backend é derivado via digits.join('').
+  const [digits, setDigits] = useState<string[]>(() => Array(6).fill(''));
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const otpCode = digits.join('');
   
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -137,6 +141,18 @@ const Auth = () => {
     }
   }, [searchParams]);
 
+  // Código inválido/expirado: usado na tradução e para decidir a limpeza
+  // dos campos de OTP após uma verificação mal-sucedida.
+  const isInvalidOtpError = (error: any) => {
+    const message = error?.message || '';
+    return (
+      message.includes('Invalid OTP') ||
+      message.includes('Token has expired') ||
+      error?.status === 403 ||
+      error?.status === 401
+    );
+  };
+
   const translateError = (error: any) => {
     const message = error?.message || '';
     console.error('Auth error:', error);
@@ -148,7 +164,7 @@ const Auth = () => {
     if (message.includes('missing OAuth secret') || message.includes('provider is not enabled')) {
       return 'Configuração de login social pendente no backend. Tente novamente em instantes.';
     }
-    if (message.includes('Invalid OTP') || message.includes('Token has expired') || error?.status === 403 || error?.status === 401) {
+    if (isInvalidOtpError(error)) {
       return 'Código inválido ou expirado. Tente novamente.';
     }
     return message;
@@ -257,13 +273,79 @@ const Auth = () => {
     }
   };
 
+  // ——— Edição do código OTP (seis posições independentes) ———
+
+  const setDigitAt = (index: number, digit: string) => {
+    setDigits((prev) => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+  };
+
+  // Distribui uma sequência de dígitos a partir de `start`: colagem de código
+  // completo ou autofill "one-time-code" que entrega tudo num campo só.
+  const applyOtpDigits = (start: number, raw: string) => {
+    const seq = raw.replace(/\D/g, '').slice(0, 6 - start);
+    if (!seq) return;
+    setDigits((prev) => {
+      const next = [...prev];
+      seq.split('').forEach((d, i) => {
+        next[start + i] = d;
+      });
+      return next;
+    });
+    otpRefs.current[Math.min(start + seq.length, 5)]?.focus();
+  };
+
+  const handleOtpChange = (index: number, raw: string) => {
+    const value = raw.replace(/\D/g, '');
+    if (!value) {
+      // Limpeza direta do campo (selecionar tudo e deletar) também apaga.
+      setDigitAt(index, '');
+      return;
+    }
+    if (value.length === 1) {
+      // Digitação simples substitui o dígito do campo em foco.
+      setDigitAt(index, value);
+      if (index < 5) otpRefs.current[index + 1]?.focus();
+      return;
+    }
+    applyOtpDigits(index, value);
+  };
+
+  const handleOtpKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (e.key !== 'Backspace') return;
+    e.preventDefault();
+    if (digits[index]) {
+      // Campo preenchido: apaga e permanece nele.
+      setDigitAt(index, '');
+      return;
+    }
+    if (index > 0) {
+      // Campo vazio: volta ao anterior, apaga e foca nele.
+      setDigitAt(index - 1, '');
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  // Limpa os seis campos e devolve o foco ao primeiro (erro de verificação,
+  // reenvio de código ou cancelamento).
+  const clearOtp = () => {
+    setDigits(Array(6).fill(''));
+    otpRefs.current[0]?.focus();
+  };
+
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.verifyOtp({
         email,
-        token: otpCode,
+        token: digits.join(''),
         type: 'signup'
       });
       if (error) throw error;
@@ -273,6 +355,11 @@ const Auth = () => {
       toast.success('E-mail verificado com sucesso!');
       navigate('/inicio');
     } catch (error: any) {
+      if (isInvalidOtpError(error)) {
+        // Código inválido/expirado: limpa os seis campos, foca o primeiro e
+        // mantém o usuário na tela de verificação para redigitar.
+        clearOtp();
+      }
       toast.error(translateError(error));
     } finally {
       setIsLoading(false);
@@ -284,7 +371,7 @@ const Auth = () => {
     // Cancelamento invalida respostas antigas de restauração em voo.
     otpFlowEpochRef.current += 1;
     clearPendingSignup();
-    setOtpCode('');
+    setDigits(Array(6).fill(''));
     setIsOTPMode(false);
     setIsRegistering(false);
   };
@@ -306,6 +393,8 @@ const Auth = () => {
         signupIntent: signupIntent ?? 'pet_owner',
       });
       toast.success('Novo código enviado!');
+      // Novo código emitido: campos limpos e foco no primeiro dígito.
+      clearOtp();
     } catch (error: any) {
       toast.error(translateError(error));
     } finally {
@@ -349,38 +438,28 @@ const Auth = () => {
               </header>
               <form onSubmit={handleVerifyOTP} className="auth-form">
                 <div className="otp-container">
-                  {[...Array(6)].map((_, index) => (
+                  {digits.map((digit, index) => (
                     <div key={index} className="otp-input-wrapper">
                       <input
                         id={`otp-${index}`}
+                        ref={(el) => { otpRefs.current[index] = el; }}
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
+                        autoComplete="one-time-code"
+                        aria-label={`Dígito ${index + 1} do código`}
                         maxLength={1}
-                        value={otpCode[index] || ''}
-                        onChange={(e) => {
-                          const value = e.target.value.replace(/\D/g, '');
-                          if (value) {
-                            const newOtp = otpCode.split('');
-                            newOtp[index] = value;
-                            const combined = newOtp.join('').slice(0, 6);
-                            setOtpCode(combined);
-                            
-                            // Auto-focus next
-                            if (index < 5) {
-                              const nextInput = document.getElementById(`otp-${index + 1}`);
-                              nextInput?.focus();
-                            }
-                          }
+                        value={digit}
+                        onChange={(e) => handleOtpChange(index, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          applyOtpDigits(index, e.clipboardData.getData('text'));
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Backspace' && !otpCode[index] && index > 0) {
-                            const prevInput = document.getElementById(`otp-${index - 1}`);
-                            prevInput?.focus();
-                          }
-                        }}
+                        onFocus={(e) => e.currentTarget.select()}
                         required
                         className="otp-digit-input"
+                        data-testid={`otp-input-${index}`}
                       />
                     </div>
                   ))}

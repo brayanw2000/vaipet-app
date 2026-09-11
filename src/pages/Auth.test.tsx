@@ -401,4 +401,180 @@ describe("Auth — fluxo de cadastro OTP", () => {
     ]);
     clearPendingSignup();
   });
+
+  // ——— Edição e reset do código OTP (seis posições independentes) ———
+
+  const getOtpInputs = () =>
+    Array.from(
+      document.querySelectorAll<HTMLInputElement>(".otp-digit-input"),
+    );
+
+  it("Backspace apaga o dígito preenchido e, no campo vazio, volta ao anterior com foco", async () => {
+    savePendingSignup(PENDING);
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    fillOtp();
+    const inputs = getOtpInputs();
+    // O foco avança junto com a digitação: o último campo fica em foco.
+    expect(document.activeElement).toBe(inputs[5]);
+
+    // Campo preenchido: apaga e permanece nele.
+    fireEvent.keyDown(inputs[5], { key: "Backspace" });
+    expect(inputs[5].value).toBe("");
+    expect(document.activeElement).toBe(inputs[5]);
+
+    // Campo vazio: volta ao anterior, apaga e foca nele.
+    fireEvent.keyDown(inputs[5], { key: "Backspace" });
+    expect(inputs[4].value).toBe("");
+    expect(document.activeElement).toBe(inputs[4]);
+    // Demais dígitos permanecem intactos.
+    expect(inputs.slice(0, 4).map((i) => i.value)).toEqual([
+      "1", "2", "3", "4",
+    ]);
+  });
+
+  it("dígito preenchido pode ser substituído e o código derivado reflete a edição", async () => {
+    savePendingSignup(PENDING);
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    fillOtp();
+    const inputs = getOtpInputs();
+    fireEvent.change(inputs[2], { target: { value: "9" } });
+    expect(inputs[2].value).toBe("9");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    );
+    await waitFor(() => expect(h.verifyOtp).toHaveBeenCalledTimes(1));
+    // Código final derivado de digits.join('') — "129456", não "123456".
+    expect(h.verifyOtp).toHaveBeenCalledWith({
+      email: "dono@teste.com",
+      token: "129456",
+      type: "signup",
+    });
+  });
+
+  it("colar um código de seis números preenche todos os campos", async () => {
+    savePendingSignup(PENDING);
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    const inputs = getOtpInputs();
+    fireEvent.paste(inputs[0], {
+      clipboardData: { getData: () => "654321" },
+    });
+    expect(inputs.map((i) => i.value)).toEqual([
+      "6", "5", "4", "3", "2", "1",
+    ]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    );
+    await waitFor(() => expect(h.verifyOtp).toHaveBeenCalledTimes(1));
+    expect(h.verifyOtp).toHaveBeenCalledWith({
+      email: "dono@teste.com",
+      token: "654321",
+      type: "signup",
+    });
+  });
+
+  it("código inválido limpa os seis campos, foca o primeiro e mantém a tela de verificação", async () => {
+    savePendingSignup(PENDING);
+    h.verifyOtp.mockResolvedValue({ error: { message: "Invalid OTP" } });
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    fillOtp();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    );
+
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        "Código inválido ou expirado. Tente novamente.",
+      ),
+    );
+    const inputs = getOtpInputs();
+    expect(inputs.every((i) => i.value === "")).toBe(true);
+    expect(document.activeElement).toBe(inputs[0]);
+    // Usuário permanece na verificação; botão desabilitado até redigir.
+    expect(screen.getByText("Verificar E-mail")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    ).toBeDisabled();
+  });
+
+  it("após erro, o usuário digita o código correto e verifyOtp recebe exatamente os novos seis números", async () => {
+    savePendingSignup(PENDING);
+    h.verifyOtp
+      .mockResolvedValueOnce({ error: { message: "Invalid OTP" } })
+      .mockResolvedValueOnce({ error: null });
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    fillOtp();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    );
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        "Código inválido ou expirado. Tente novamente.",
+      ),
+    );
+
+    // Redigita o código correto do zero.
+    fillOtp();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar Código/i }),
+    );
+
+    await waitFor(() => expect(h.verifyOtp).toHaveBeenCalledTimes(2));
+    expect(h.verifyOtp).toHaveBeenLastCalledWith({
+      email: "dono@teste.com",
+      token: "123456",
+      type: "signup",
+    });
+    await waitFor(() => expect(h.navigate).toHaveBeenCalledWith("/inicio"));
+  });
+
+  it("reenvio bem-sucedido limpa os seis campos e foca o primeiro", async () => {
+    savePendingSignup(PENDING);
+    h.resend.mockResolvedValue({ error: null });
+
+    render(<Auth />);
+    await waitFor(() =>
+      expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+    );
+
+    fillOtp();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Enviar novamente/i }),
+    );
+
+    await waitFor(() =>
+      expect(h.toastSuccess).toHaveBeenCalledWith("Novo código enviado!"),
+    );
+    const inputs = getOtpInputs();
+    expect(inputs.every((i) => i.value === "")).toBe(true);
+    expect(document.activeElement).toBe(inputs[0]);
+  });
 });
