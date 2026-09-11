@@ -132,6 +132,9 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
   let oCtx: any, wCtx: any;
   let sessId: string;
 
+  // Coleta diagnóstico D1 (escopo do teste inteiro — visível no finally).
+  const diag: Record<string, unknown> = {};
+
   log(`owner_id: ${ownerCreds.id}`);
   log(`walker_id_esperado: ${walkerCreds.id}`);
 
@@ -289,21 +292,168 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
       log("Job matching executado");
     });
 
+    // ================================================================
+    // DIAGNÓSTICO D1 — oferta existe no banco, mas a UI do PetWalker
+    // não a renderiza. Objetivo: CLASSIFICAR o sintoma entre:
+    //   A) RPC segura não retorna a oferta do banco
+    //   B) UI nunca chama a RPC (gating isOnline/activeRequest)
+    //   C) RPC retorna e a página chama, mas a UI não renderiza
+    //   D) RPC autenticada do walker retorna ERRO
+    // Diagnóstico SOMENTE LEITURA. Nenhuma mutação de ciclo de vida.
+    // ================================================================
+    await test.step("D1.1. backend: offer row truth", async () => {
+      // Campos SEGUROS da linha real de walk_offers (esquema gerado:
+      // walk_offers NÃO possui coluna de expiração — expiração factual é
+      // walk_sessions.matching_expires_at, lida junto).
+      const { data: offer, error } = await admin
+        .from("walk_offers")
+        .select("session_id, walker_id, offer_status, created_at")
+        .eq("session_id", sessId)
+        .eq("walker_id", walkerCreds.id)
+        .single();
+      if (error) throw error;
+      diag.dbOfferExists = true;
+      diag.offerRow = {
+        session_id: offer.session_id,
+        walker_id: offer.walker_id,
+        offer_status: offer.offer_status,
+        created_at: offer.created_at,
+      };
+      const { data: sess, error: sErr } = await admin
+        .from("walk_sessions")
+        .select("matching_expires_at")
+        .eq("id", sessId)
+        .single();
+      if (sErr) throw sErr;
+      (diag.offerRow as Record<string, unknown>).matching_expires_at = sess.matching_expires_at;
+      log(`D1.1 oferta REAL: ${JSON.stringify(diag.offerRow)}`);
+
+      // Existência e identidade continuam obrigatórias (contrato inalterado).
+      expect(offer.session_id).toBe(sessId);
+      expect(offer.walker_id).toBe(walkerCreds.id);
+    });
+
+    await test.step("D1.2. walker profile/authority truth", async () => {
+      const { data: prof, error: pErr } = await admin
+        .from("profiles")
+        .select("id, signup_intent")
+        .eq("id", walkerCreds.id)
+        .single();
+      if (pErr) throw pErr;
+      const { data: role, error: rErr } = await admin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", walkerCreds.id)
+        .maybeSingle();
+      if (rErr) throw rErr;
+      const { data: wp, error: wErr } = await admin
+        .from("petwalker_profiles")
+        .select("user_id, approval_status, availability_status, is_accepting_requests, current_walk_id, service_radius_km")
+        .eq("user_id", walkerCreds.id)
+        .single();
+      if (wErr) throw wErr;
+      diag.walkerProfile = {
+        signup_intent: prof.signup_intent,
+        role: role?.role ?? null,
+        approval_status: wp.approval_status,
+        availability_status: wp.availability_status,
+        is_accepting_requests: wp.is_accepting_requests,
+        current_walk_id: wp.current_walk_id,
+        service_radius_km: wp.service_radius_km,
+      };
+      log(`D1.2 perfil do walker: ${JSON.stringify(diag.walkerProfile)}`);
+      // Fatos certificados do setup (SÓ LEITURA — nada é mutado aqui).
+      expect(wp.approval_status).toBe("approved");
+      expect(wp.availability_status).toBe("available");
+      expect(wp.is_accepting_requests).toBe(true);
+      expect(wp.current_walk_id).toBeNull();
+    });
+
+    await test.step("D1.3. direct authenticated walker RPC (same read-only RPC as product)", async () => {
+      // get_available_walk_offers é DESCOBERTA SOMENTE LEITURA de ofertas
+      // (NÃO é mutação de ciclo de vida). Chamado com wCtx.client — o MESMO
+      // cliente autenticado do Walker REAL. NUNCA admin.
+      const res = await wCtx.client.rpc("get_available_walk_offers");
+      const rows = (res.data as Array<Record<string, unknown>>) ?? [];
+      const directRpc = {
+        error: res.error ? `${res.error.code}: ${res.error.message}` : null,
+        count: res.error ? null : rows.length,
+        sessionIds: res.error ? null : rows.map((r) => r.session_id).slice(0, 10),
+        containsSession: res.error ? null : rows.some((r) => r.session_id === sessId),
+      };
+      diag.directRpc = directRpc;
+      if (directRpc.error) {
+        log(`DIRECT_WALKER_RPC_ERROR ${JSON.stringify(directRpc)}`);
+      } else if (directRpc.containsSession) {
+        log(`DIRECT_WALKER_RPC_CONTAINS_SESSION ${JSON.stringify(directRpc)}`);
+      } else {
+        log(`DIRECT_WALKER_RPC_EMPTY ${JSON.stringify(directRpc)}`);
+      }
+      // Fatos seguros adicionais do tipo oficial de retorno, quando presentes.
+      if (!res.error && rows.length > 0) {
+        const mine = rows.find((r) => r.session_id === sessId);
+        if (mine) {
+          log(`D1.3 linha da sessão: id=${mine.id} offer_status=${mine.offer_status} matching_expires_at=${mine.matching_expires_at}`);
+        }
+      }
+    });
+
     await test.step("11. walker: offer-visible", async () => {
-      await wCtx.page.goto("/petwalker");
-      
+      // Observador PASSIVO de rede da página real (sem route/mock/intercept).
+      // Fatos seguros: contagem, método, status HTTP, timestamp. Corpo é
+      // opcional e NUNCA obrigatório (sem corrida CDP de leitura de corpo).
+      let pageRpcCount = 0;
+      const pageRpcStatuses: number[] = [];
+      wCtx.page.on("request", (req) => {
+        try {
+          if (new URL(req.url()).pathname === "/rest/v1/rpc/get_available_walk_offers") {
+            pageRpcCount++;
+          }
+        } catch { /* URL inválida — ignorar */ }
+      });
+      wCtx.page.on("response", (res) => {
+        try {
+          if (new URL(res.url()).pathname === "/rest/v1/rpc/get_available_walk_offers") {
+            pageRpcStatuses.push(res.status());
+          }
+        } catch { /* URL inválida — ignorar */ }
+      });
+
       const onlineBtn = wCtx.page.getByRole('button', { name: /Ficar Online/i });
       const acceptBtn = wCtx.page.locator('[data-testid="walker-accept-button"]');
-      
+
+      let onlineButtonSeen = false;
+      let onlineButtonClicked = 0;
+      let acceptButtonVisible = false;
+
       await expect.poll(async () => {
-        if (await acceptBtn.isVisible()) return true;
+        if (await acceptBtn.isVisible()) {
+          acceptButtonVisible = true;
+          return true;
+        }
         if (await onlineBtn.isVisible()) {
+          if (!onlineButtonSeen) {
+            onlineButtonSeen = true;
+            log("ONLINE_BUTTON_SEEN");
+          }
+          // Comportamento preservado do run original: clicar quando visível.
           await onlineBtn.click().catch(() => {});
+          onlineButtonClicked++;
+          log(`ONLINE_BUTTON_CLICKED (total=${onlineButtonClicked})`);
           await wCtx.page.waitForTimeout(2000);
         }
         return await acceptBtn.isVisible();
       }, { timeout: 45000, message: "Oferta visível no PetWalker" }).toBeTruthy();
-      
+
+      // Estado factual da UI no momento da resolução.
+      diag.ui = {
+        pathname: new URL(wCtx.page.url()).pathname,
+        acceptButtonVisible,
+      };
+
+      diag.pageRpc = { requestCount: pageRpcCount, httpStatuses: pageRpcStatuses };
+      log(`PAGE_RPC ${JSON.stringify(diag.pageRpc)}`);
+      log(`UI ${JSON.stringify(diag.ui)}`);
       log("11. Oferta visível no PetWalker");
     });
 
@@ -343,6 +493,15 @@ test("matching: Ciclo real de oferta via job e aceite via UI", async ({ browser 
 
   } finally {
     await test.step("cleanup", async () => {
+      // Resumo diagnóstico D1 — impresso em SUCESSO e FALHA (o objeto `diag`
+      // está no escopo do teste; o resumo classifica o sintoma observado).
+      log("=== DIAGNOSTIC SUMMARY D1 ===");
+      log(`DB_OFFER_EXISTS=${diag.dbOfferExists ?? false}`);
+      log("WALKER_PROFILE: " + JSON.stringify(diag.walkerProfile ?? null));
+      log("DIRECT_RPC: " + JSON.stringify(diag.directRpc ?? null));
+      log("PAGE_RPC: " + JSON.stringify(diag.pageRpc ?? null));
+      log("UI: " + JSON.stringify(diag.ui ?? null));
+
       if (oCtx) await oCtx.context.close();
       if (wCtx) await wCtx.context.close();
       await quickCleanup([ownerCreds.id, walkerCreds.id], runId);
