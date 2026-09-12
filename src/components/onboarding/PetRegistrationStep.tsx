@@ -144,7 +144,7 @@ export const PetRegistrationStep: React.FC<PetRegistrationStepProps> = ({ onNext
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-start pt-20 p-6 bg-[#F7F5EF] relative">
+    <div className="min-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex flex-col items-center justify-start p-6 pt-20 bg-[#F7F5EF] relative">
       {onBack && (
         <button 
           onClick={onBack}
@@ -262,7 +262,7 @@ export const PetRegistrationStep: React.FC<PetRegistrationStepProps> = ({ onNext
           <Button
             type="submit"
             disabled={loading || uploading}
-            className="w-full h-16 text-[#F7F5EF] text-xl font-bold rounded-2xl border-0 mt-4 hover:opacity-90 active:scale-[0.98] transition-all font-display shadow-lg shadow-[#0B1410]/10"
+            className="w-full h-16 text-[#F7F5EF] text-xl font-bold rounded-2xl border-0 mt-4 mb-[max(0.5rem,env(safe-area-inset-bottom))] hover:opacity-90 active:scale-[0.98] transition-all font-display shadow-lg shadow-[#0B1410]/10"
             style={{ backgroundColor: '#0B1410' }}
           >
             {loading ? 'Cadastrando...' : uploading ? 'Enviando fotos...' : 'Finalizar cadastro'}

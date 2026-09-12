@@ -12,10 +12,10 @@ interface SuccessStepProps {
 
 export const SuccessStep: React.FC<SuccessStepProps> = ({ onNext, isCompleting }) => {
   return (
-    <div className="fixed inset-0 flex flex-col items-center overflow-hidden">
+    <div className="flex flex-col items-center min-h-[100dvh] overflow-x-hidden">
       {/* Background Image */}
       <div 
-        className="absolute inset-0 z-0 bg-cover bg-center"
+        className="fixed inset-0 z-0 bg-cover bg-center"
         style={{ backgroundImage: `url(${successBgAsset.url})` }}
       />
 
@@ -30,7 +30,7 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({ onNext, isCompleting }
       </div>
 
       {/* Bottom Section - Clean Button */}
-      <div className="mt-auto mb-16 w-full px-8 relative z-10 max-w-sm">
+      <div className="mt-auto mb-[max(4rem,calc(env(safe-area-inset-bottom)+1rem))] w-full px-8 relative z-10 max-w-sm">
         <Button
           onClick={onNext}
           disabled={isCompleting}

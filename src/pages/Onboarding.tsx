@@ -113,8 +113,11 @@ const Onboarding = () => {
 
   const stepProgress = (currentStep / 4) * 100;
 
+  // Layout mobile-seguro: rolagem vertical permitida (sem overflow-hidden),
+  // altura dinâmica do navegador (100dvh) e safe areas do iPhone respeitadas
+  // via env() — o botão principal fica sempre alcançável com as barras do Safari.
   return (
-    <div className="min-h-screen bg-[#F7F5EF] relative overflow-hidden flex flex-col items-center">
+    <div data-testid="onboarding-root" className="min-h-[100dvh] bg-[#F7F5EF] relative flex flex-col items-center">
       {/* Progress bar */}
       <div className="fixed top-0 left-0 right-0 h-1.5 bg-[#0B1410]/5 z-[60]">
         <motion.div 
@@ -124,7 +127,7 @@ const Onboarding = () => {
         />
       </div>
 
-      <div className="w-full max-w-md relative z-10">
+      <div className="w-full max-w-md relative z-10 py-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}

@@ -77,9 +77,6 @@ const submitRegistration = async (email = "novo@teste.com") => {
   fireEvent.change(screen.getByPlaceholderText("Nome Completo"), {
     target: { value: "Novo Usuário" },
   });
-  fireEvent.change(screen.getByPlaceholderText("Telefone"), {
-    target: { value: "11988887777" },
-  });
   fireEvent.change(screen.getByPlaceholderText("E-mail"), {
     target: { value: email },
   });
@@ -402,6 +399,61 @@ describe("Auth — fluxo de cadastro OTP", () => {
     clearPendingSignup();
   });
 
+  it("o cadastro inicial não exibe o campo Telefone", async () => {
+    render(<Auth />);
+
+    fireEvent.click(screen.getByText("Crie uma"));
+    await waitFor(
+      () => expect(screen.getByTestId("intent-owner-btn")).toBeInTheDocument(),
+      WAIT,
+    );
+    fireEvent.click(screen.getByTestId("intent-owner-btn"));
+    await waitFor(
+      () =>
+        expect(screen.getByPlaceholderText("Nome Completo")).toBeInTheDocument(),
+      WAIT,
+    );
+
+    expect(screen.queryByPlaceholderText("Telefone")).not.toBeInTheDocument();
+    // Nome, e-mail, senha e confirmação seguem presentes.
+    expect(screen.getByPlaceholderText("Nome Completo")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("E-mail")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Senha")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Confirmar Senha"),
+    ).toBeInTheDocument();
+  });
+
+  it("signUp não recebe phone no metadata (telefone passa a ser coletado no onboarding)", async () => {
+    h.signUp.mockResolvedValue({
+      data: { session: null, user: { identities: [{ provider: "email" }] } },
+      error: null,
+    });
+
+    render(<Auth />);
+    await submitRegistration("semphone@teste.com");
+
+    const payload = h.signUp.mock.calls[0][0] as {
+      email?: string;
+      password?: string;
+      options?: { data?: Record<string, unknown> };
+    };
+    const metadata = payload?.options?.data ?? {};
+
+    expect(metadata).not.toHaveProperty("phone");
+    // Nome e intenção seguem no metadata; e-mail/senha seguem no payload.
+    expect(metadata.full_name).toBe("Novo Usuário");
+    expect(metadata.signup_intent).toBe("pet_owner");
+    expect(payload.email).toBe("semphone@teste.com");
+    expect(payload.password).toBe("senha123");
+
+    // Fluxo OTP existente continua funcionando.
+    await waitFor(
+      () => expect(screen.getByText("Verificar E-mail")).toBeInTheDocument(),
+      WAIT,
+    );
+  });
+
   // ——— Edição e reset do código OTP (seis posições independentes) ———
 
   const getOtpInputs = () =>
@@ -514,10 +566,13 @@ describe("Auth — fluxo de cadastro OTP", () => {
     expect(inputs.every((i) => i.value === "")).toBe(true);
     expect(document.activeElement).toBe(inputs[0]);
     // Usuário permanece na verificação; botão desabilitado até redigir.
+    // (waitFor: aguarda o finally do handler sair do estado "Verificando...".)
     expect(screen.getByText("Verificar E-mail")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Confirmar Código/i }),
-    ).toBeDisabled();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Confirmar Código/i }),
+      ).toBeDisabled(),
+    );
   });
 
   it("após erro, o usuário digita o código correto e verifyOtp recebe exatamente os novos seis números", async () => {
@@ -541,11 +596,21 @@ describe("Auth — fluxo de cadastro OTP", () => {
       ),
     );
 
+    // Aguarda o handler sair do estado "Verificando..." (nome do botão volta
+    // a "Confirmar Código") antes de redigitar; os campos foram limpos no erro.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Confirmar Código/i }),
+      ).toBeInTheDocument(),
+    );
+
     // Redigita o código correto do zero.
     fillOtp();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Confirmar Código/i }),
-    );
+    const confirmBtn = screen.getByRole("button", {
+      name: /Confirmar Código/i,
+    });
+    await waitFor(() => expect(confirmBtn).toBeEnabled());
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => expect(h.verifyOtp).toHaveBeenCalledTimes(2));
     expect(h.verifyOtp).toHaveBeenLastCalledWith({

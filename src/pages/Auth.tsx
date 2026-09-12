@@ -35,7 +35,6 @@ const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   // OTP: seis posições independentes (edição confiável por dígito).
@@ -186,7 +185,6 @@ const Auth = () => {
           options: {
             data: {
               full_name: fullName,
-              phone: phone,
               signup_intent: signupIntent
             }
           }
@@ -617,9 +615,6 @@ const Auth = () => {
                   <>
                     <div className="input-wrapper">
                       <input type="text" placeholder="Nome Completo" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-                    </div>
-                    <div className="input-wrapper">
-                      <input type="tel" placeholder="Telefone" value={phone} onChange={(e) => setPhone(e.target.value)} required />
                     </div>
                   </>
                 )}

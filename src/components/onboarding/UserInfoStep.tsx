@@ -91,7 +91,7 @@ export const UserInfoStep: React.FC<UserInfoStepProps> = ({ onNext, onBack }) =>
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 text-center relative">
+    <div className="flex min-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col items-center px-6 pt-20 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center relative">
       {onBack && (
         <button 
           onClick={onBack}
