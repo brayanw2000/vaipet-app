@@ -1,7 +1,8 @@
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import Onboarding from "./Onboarding";
+import { PermissionsStep } from "@/components/onboarding/PermissionsStep";
 
 // Framer Motion no jsdom: as animações não rodam; garante que o conteúdo
 // animado fique no DOM para as asserções.
@@ -83,20 +84,30 @@ const setViewport = (width: number, height: number) => {
   window.dispatchEvent(new Event("resize"));
 };
 
-// Geolocalização concedida: o stub vai no protótipo, pois o jsdom define
-// geolocation lá (não redefinível na instância do navigator).
-const grantGeolocation = () => {
-  Object.defineProperty(Object.getPrototypeOf(navigator), "geolocation", {
-    configurable: true,
-    value: {
-      getCurrentPosition: (success: PositionCallback) =>
-        success({
-          coords: { latitude: -23.55, longitude: -46.63, accuracy: 10 },
-          timestamp: Date.now(),
-        } as GeolocationPosition),
-    },
-  });
+// Instala um stub de geolocalização com comportamento configurável por
+// teste. IMPORTANTE: o setup global (src/test/setup.ts) define geolocation
+// como propriedade própria de window.navigator (auto-concedida) — o stub do
+// teste deve SUBSTITUIR essa propriedade na instância, não no protótipo.
+// Retorna o spy de getCurrentPosition.
+const installGeolocation = (
+  impl: (success: PositionCallback, error: PositionErrorCallback) => void,
+) => {
+  const getCurrentPosition = vi.fn(impl);
+  (window.navigator as unknown as { geolocation: unknown }).geolocation = {
+    getCurrentPosition,
+  };
+  return getCurrentPosition;
 };
+
+// Geolocalização concedida: a etapa de Permissões resolve imediatamente
+// quando o componente chama getCurrentPosition.
+const grantGeolocation = () =>
+  installGeolocation((success) =>
+    success({
+      coords: { latitude: -23.55, longitude: -46.63, accuracy: 10 },
+      timestamp: Date.now(),
+    } as GeolocationPosition),
+  );
 
 /**
  * Contrato estrutural de layout mobile (o que a correção garante):
@@ -145,6 +156,119 @@ const goThroughUserInfo = async () => {
   fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
   await screen.findByText(/Permissões/i);
 };
+
+// ---- PermissionsStep: localização opcional, avanço nunca bloqueado ----
+
+describe("PermissionsStep — localização opcional", () => {
+  const renderStep = (onNext = vi.fn()) => {
+    render(<PermissionsStep onNext={onNext} />);
+    return onNext;
+  };
+
+  const clickLocationCard = async () => {
+    fireEvent.click(screen.getByTestId("location-card"));
+    // Deixa o callback assíncrono do stub resolver antes das asserções.
+    await act(async () => {});
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("permissão concedida → botão principal vira 'Continuar' e avança", async () => {
+    installGeolocation((success) =>
+      success({
+        coords: { latitude: -23.55, longitude: -46.63, accuracy: 10 },
+        timestamp: Date.now(),
+      } as GeolocationPosition),
+    );
+    const onNext = renderStep();
+
+    await clickLocationCard();
+
+    const btn = screen.getByTestId("continue-permissions");
+    expect(btn).toHaveTextContent("Continuar");
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("permissão negada → mensagem clara e 'Continuar sem localização' avança", async () => {
+    installGeolocation((_success, error) =>
+      error({ code: 1, message: "User denied Geolocation", PERMISSION_DENIED: 1 } as GeolocationPositionError),
+    );
+    const onNext = renderStep();
+
+    await clickLocationCard();
+
+    // Mensagem clara para negação.
+    expect(screen.getByTestId("location-message")).toHaveTextContent(
+      "Localização não autorizada. Você pode continuar e ativar depois nos ajustes.",
+    );
+
+    const btn = screen.getByTestId("continue-permissions");
+    expect(btn).toHaveTextContent("Continuar sem localização");
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("geolocalização não suportada → usuário consegue avançar", async () => {
+    // Sem suporte: substitui o stub global por undefined.
+    (window.navigator as unknown as { geolocation: unknown }).geolocation =
+      undefined;
+    const onNext = renderStep();
+
+    fireEvent.click(screen.getByTestId("location-card"));
+    await act(async () => {});
+
+    const btn = screen.getByTestId("continue-permissions");
+    expect(btn).toHaveTextContent("Continuar sem localização");
+    fireEvent.click(btn);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("timeout/erro → usuário consegue avançar", async () => {
+    installGeolocation((_success, error) =>
+      error({ code: 3, message: "Position retrieval timed out", TIMEOUT: 3 } as GeolocationPositionError),
+    );
+    const onNext = renderStep();
+
+    await clickLocationCard();
+
+    expect(screen.getByTestId("location-message")).toHaveTextContent(
+      "Localização indisponível neste dispositivo. Você pode continuar e ativar depois nos ajustes.",
+    );
+    const btn = screen.getByTestId("continue-permissions");
+    expect(btn).toHaveTextContent("Continuar sem localização");
+    fireEvent.click(btn);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("clique repetido durante a solicitação não cria chamadas duplicadas", async () => {
+    // Solicitação que nunca resolve dentro do teste: simula o usuário
+    // clicando repetidamente enquanto o prompt de permissão está aberto.
+    const getCurrentPosition = installGeolocation(() => {
+      /* pendente até o fim do teste */
+    });
+    const onNext = renderStep();
+
+    fireEvent.click(screen.getByTestId("location-card"));
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("location-card"));
+    fireEvent.click(screen.getByTestId("location-card"));
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+
+    // O avanço continua possível enquanto a solicitação está em andamento.
+    fireEvent.click(screen.getByTestId("continue-permissions"));
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("Onboarding mobile — layout sem sobreposição e rolagem garantida", () => {
   beforeEach(() => {
@@ -201,9 +325,7 @@ describe("Onboarding mobile — layout sem sobreposição e rolagem garantida", 
 
       // Geolocalização concedida → tocar no card habilita o botão principal.
       fireEvent.click(locationCard);
-      const continueBtn = await screen.findByRole("button", {
-        name: "Continuar",
-      });
+      const continueBtn = await screen.findByTestId("continue-permissions");
       await waitFor(() => expect(continueBtn).toBeEnabled());
       expect(continueBtn).toBeVisible();
     });
@@ -218,9 +340,9 @@ describe("Onboarding mobile — layout sem sobreposição e rolagem garantida", 
       fireEvent.click(
         screen.getByRole("button", { name: /^Localização/ }),
       );
-      const continuePermissions = await screen.findByRole("button", {
-        name: "Continuar",
-      });
+      const continuePermissions = await screen.findByTestId(
+        "continue-permissions",
+      );
       await waitFor(() => expect(continuePermissions).toBeEnabled());
       fireEvent.click(continuePermissions);
 
