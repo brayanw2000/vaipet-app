@@ -39,11 +39,14 @@ const mapboxState = vi.hoisted(() => ({
   autoLoad: true,
   created: 0,
   instances: [] as Array<Record<string, unknown>>,
+  ctorArgs: [] as unknown[][],
+  markerLngLat: [] as unknown[],
 }));
 
 vi.mock('mapbox-gl', () => {
-  const Map = vi.fn(function MapMock(this: unknown) {
+  const Map = vi.fn(function MapMock(this: unknown, ...ctor: unknown[]) {
     mapboxState.created += 1;
+    mapboxState.ctorArgs.push(ctor);
     if (mapboxState.shouldThrow) throw new Error('token do Mapbox inválido');
 
     const handlers: Record<string, Array<(event?: unknown) => void>> = {};
@@ -89,7 +92,8 @@ vi.mock('mapbox-gl', () => {
   });
 
   class Marker {
-    setLngLat() {
+    setLngLat(lngLat: unknown) {
+      mapboxState.markerLngLat.push(lngLat);
       return this;
     }
     addTo() {
@@ -226,6 +230,8 @@ describe('Mapbox na rota /search-walk', () => {
     mapboxState.autoLoad = true;
     mapboxState.created = 0;
     mapboxState.instances = [];
+    mapboxState.ctorArgs = [];
+    mapboxState.markerLngLat = [];
     vi.clearAllMocks();
   });
 
@@ -324,6 +330,76 @@ describe('Mapbox na rota /search-walk', () => {
       });
 
       await waitFor(() => expect(mapboxState.created).toBe(2));
+    });
+  });
+
+  describe('geolocalização real em /search-walk', () => {
+    // Instala um double de geolocalização que captura os callbacks (resposta
+    // sob controle do teste) em vez de resolver sincronamente.
+    const installGpsDouble = () => {
+      let resolve: (pos: GeolocationPosition) => void = () => {};
+      const promise = new Promise<GeolocationPosition>((res) => {
+        resolve = res;
+      });
+      const getCurrentPosition = vi.fn(
+        (cb: (pos: GeolocationPosition) => void) => {
+          promise.then((pos) => cb(pos));
+        },
+      );
+      // O setup global define navigator.geolocation como writable (não
+      // configurable), então substituímos por atribuição em vez de defineProperty.
+      (window.navigator as unknown as { geolocation: Geolocation }).geolocation = {
+        getCurrentPosition,
+        watchPosition: vi.fn(() => 1),
+        clearWatch: vi.fn(),
+      } as unknown as Geolocation;
+      return {
+        getCurrentPosition,
+        succeed: (lat: number, lng: number) =>
+          resolve({
+            coords: { latitude: lat, longitude: lng, accuracy: 9 },
+          } as GeolocationPosition),
+      };
+    };
+
+    beforeEach(() => setToken(true));
+
+    it('o fix REAL do dispositivo vira centro do mapa e posição do marcador — nunca um fallback', async () => {
+      const gps = installGpsDouble();
+      renderRoute();
+
+      // A tela monta; o fix ainda não chegou → sem mapa ainda.
+      await waitFor(() => expect(gps.getCurrentPosition).toHaveBeenCalledTimes(1));
+      expect(mapboxState.created).toBe(0);
+
+      // Coordenadas EXATAS do dispositivo (diferentes de qualquer default).
+      const DEVICE = { lat: -23.589417, lng: -46.657941 };
+      act(() => {
+        gps.succeed(DEVICE.lat, DEVICE.lng);
+      });
+
+      // O mapa inicializa centrado exatamente nelas.
+      await waitFor(() => expect(mapboxState.created).toBe(1));
+      const options = mapboxState.ctorArgs[0]?.[0] as { center: [number, number] };
+      expect(options.center).toEqual([DEVICE.lng, DEVICE.lat]);
+
+      // O marcador do usuário é posicionado nas coordenadas exatas.
+      expect(mapboxState.markerLngLat).toContainEqual([DEVICE.lng, DEVICE.lat]);
+    });
+
+    it('GPS falhando NÃO comita posição padrão: mapa só nasce com fix real', async () => {
+      const gps = installGpsDouble();
+      renderRoute();
+
+      await waitFor(() => expect(gps.getCurrentPosition).toHaveBeenCalledTimes(1));
+      // Falha do GPS: nada é comitado (nem o centro default antigo).
+      // Sem fix real, o efeito do mapa não roda — sem mapa, sem marker.
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mapboxState.created).toBe(0);
+      expect(mapboxState.markerLngLat).toHaveLength(0);
     });
   });
 });

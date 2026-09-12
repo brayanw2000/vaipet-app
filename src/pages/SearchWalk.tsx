@@ -368,10 +368,12 @@ const SearchWalk = () => {
           // marker at the pet's home so WalkInProgress mounts cleanly
           // (walkerMarker.setLngLat would crash on null).
           setWalkerLocation([home.lng, home.lat]);
-        } else {
-          const fallback: [number, number] = userLocation ?? [-46.6333, -23.5505];
-          commitUserLocation(fallback, true);
-          setWalkerLocation(fallback);
+        } else if (userLocationRef.current) {
+          // Sem home_location na sessão: só usamos a localização REAL do
+          // usuário. A posição padrão nunca entra no estado como se fosse
+          // a localização atual; o walker fica ancorado no fix real.
+          const real = userLocationRef.current;
+          setWalkerLocation(real);
         }
 
         // setWalker(null); // Explicitly null while searching
@@ -548,9 +550,17 @@ const SearchWalk = () => {
     };
 
     if (navigator.geolocation) {
+      // Fix inicial REAL: nunca jogamos uma posição padrão no estado.
+      // Sem fix, o mapa fica sem userLocation (fallback visual) até o GPS
+      // responder — as coordenadas apresentadas são sempre do dispositivo.
       navigator.geolocation.getCurrentPosition(
-        (position) => commitUserLocation([position.coords.longitude, position.coords.latitude], true),
-        () => commitUserLocation([-46.6333, -23.5505], true)
+        (position) =>
+          commitUserLocation([position.coords.longitude, position.coords.latitude], true),
+        (err) => {
+          // Sem fallback no estado: mantemos userLocation como está (ou null).
+          console.error('Geolocation error (initial fix):', err?.code, err?.message);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
       watchId = navigator.geolocation.watchPosition(
         (position) => {
@@ -581,10 +591,11 @@ const SearchWalk = () => {
           applyMarker(loc);
         },
         () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
-      commitUserLocation([-46.6333, -23.5505], true);
+      // Sem geolocation: não fabricamos posição. A Home/route mostram o
+      // fallback visual; iniciar passeio exige um fix real (userLocation).
     }
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);

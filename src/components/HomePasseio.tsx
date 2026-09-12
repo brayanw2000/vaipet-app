@@ -321,6 +321,36 @@ export const HomePasseio: React.FC = () => {
   // Guarda contra solicitações paralelas: enquanto uma getPosition estiver
   // em curso, cliques repetidos não disparam novas chamadas.
   const locRequestActiveRef = useRef(false);
+  // Componente montado: callbacks antigos (respostas após unmount ou troca
+  // de tela) nunca atualizam estado.
+  const isMountedRef = useRef(true);
+
+  /**
+   * Erros de geolocalização tratados por código — nenhum bloqueia a Home:
+   * - 1 PERMISSION_DENIED → marca negado e (se não silencioso) abre o modal
+   *   com instruções honestas (nunca fingimos abrir os Ajustes do iOS);
+   * - 2 POSITION_UNAVAILABLE → sem posição agora; a Home segue utilizável e
+   *   o modal de permissão NÃO abre (não é um problema de permissão);
+   * - 3 TIMEOUT → o pedido de permissão pode nem ter sido exibido; o usuário
+   *   pode tentar de novo imediatamente — sem modal e sem estado "negado".
+   */
+  const handleLocationError = (err: GeolocationPositionError, silent: boolean) => {
+    console.error('Geolocation error:', err?.code, err?.message);
+    setLocRequesting(false);
+    if (err?.code === 3) {
+      // Timeout: NÃO é permissão negada — nova tentativa imediata permitida.
+      setLocDenied(false);
+      return;
+    }
+    if (err?.code === 2) {
+      // Posição indisponível agora: sem posição e sem modal de permissão.
+      setLocDenied(false);
+      return;
+    }
+    // PERMISSION_DENIED (1) e qualquer código desconhecido → negado.
+    setLocDenied(true);
+    if (!silent) setShowLocBlockedModal(true);
+  };
 
   /**
    * Solicita a localização. Sempre acionado por interação explícita do
@@ -345,7 +375,9 @@ export const HomePasseio: React.FC = () => {
     setLocRequesting(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (!isMountedRef.current) return; // resposta antiga: descartada
         locRequestActiveRef.current = false;
+        // Coordenadas EXATAS do dispositivo — nunca substituídas por padrão.
         setLoc({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -358,15 +390,13 @@ export const HomePasseio: React.FC = () => {
         setShowLocBlockedModal(false);
       },
       (err) => {
+        if (!isMountedRef.current) return; // resposta antiga: descartada
         locRequestActiveRef.current = false;
-        console.error('Geolocation error:', err);
-        setLocRequesting(false);
-        setLocDenied(true);
-        // Em erro silencioso (granted no mount) a Home segue funcionando
-        // sem bloquear o usuário com o modal.
-        if (!silent) setShowLocBlockedModal(true);
+        handleLocationError(err, silent);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      // Pedido de permissão do iOS precisa de tempo; cache desativado para
+      // garantir fix REAL (nunca uma posição antiga do aparelho).
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
 
@@ -405,6 +435,7 @@ export const HomePasseio: React.FC = () => {
 
     return () => {
       cancelled = true;
+      isMountedRef.current = false; // callbacks antigos nunca atualizam estado
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -682,14 +713,12 @@ export const HomePasseio: React.FC = () => {
               </p>
               <button
                 onClick={(e) => {
-                  e.stopPropagation();
-                  if (locDenied) {
-                    // Não fingimos que abrimos os ajustes do Safari:
-                    // explicamos como ativar no modal.
-                    setShowLocBlockedModal(true);
-                  } else {
-                    requestLocation(e);
-                  }
+                  // Chamada DIRETA no mesmo evento do usuário — mesmo com o
+                  // estado "negado", que é apenas informativo (permissions
+                  // pode estar defasado; no Safari o prompt pode aparecer).
+                  // Se o navegador negar de novo (código 1), o modal abre
+                  // com as instruções reais de ativação.
+                  requestLocation(e);
                 }}
                 disabled={locRequesting}
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-full active:scale-95 transition-transform"
