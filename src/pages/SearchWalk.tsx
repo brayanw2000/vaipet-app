@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl';
 import { hideMapLabels, enrichMap, tintMapInk } from '@/lib/mapStyle';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { ArrowLeft, Plus, Minus, Navigation, Sun, Moon, ChevronDown, MapPin, Clock, DollarSign, PawPrint, X, Sparkles, Map as MapIcon, Compass, Search, Trash2, Loader2, GripVertical, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, CloudSun } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, Navigation, Sun, Moon, ChevronDown, MapPin, Clock, DollarSign, PawPrint, X, Sparkles, Map as MapIcon, Compass, Search, Trash2, Loader2, GripVertical, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, CloudSun, RefreshCw } from 'lucide-react';
 import { Calendar as CalendarIcon, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,6 +21,12 @@ import { preloadCheckpointAsset } from '@/lib/checkpoint3dLayer';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import { toast } from 'sonner';
 import type { WalkStatus } from '@/types/walk';
+import { hasMapboxToken, mapboxToken } from '@/lib/mapboxConfig';
+import { isMapUnavailable, type MapStatus } from '@/lib/mapboxStatus';
+import { useReportMapStatus } from '../components/MapboxGuard';
+
+/** Tempo máximo para o estilo do mapa carregar antes de mostrar o fallback. */
+export const MAP_LOAD_TIMEOUT_MS = 12000;
 
 /** Estados em que a sessão é rastreável (posição do walker disponível). */
 export const TRACKABLE_WALK_STATUSES = [
@@ -145,6 +151,12 @@ const SearchWalk = () => {
   // Remember the last drawn route so we can re-add the layer after a
   // style swap (day↔night) WITHOUT re-fetching or re-animating it.
   const currentRouteCoords = useRef<[number, number][] | null>(null);
+  const [mapStatus, setMapStatus] = useState<MapStatus>(
+    hasMapboxToken ? 'loading' : 'missing-config',
+  );
+  const [mapInitAttempt, setMapInitAttempt] = useState(0);
+  // Reporta o estado do mapa ao guard da rota (fallback em vez de tela branca).
+  useReportMapStatus(mapStatus);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const userLocationRef = useRef<[number, number] | null>(null);
   const lastUserLocationStateAtRef = useRef(0);
@@ -638,44 +650,83 @@ const SearchWalk = () => {
 
   useEffect(() => {
     if (!mapContainer.current || !userLocation || map.current) return;
-    mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/standard",
-      center: userLocation,
-      zoom: 15,
-      pitch: 45,
-      bearing: 0,
-      antialias: true,
-      config: {
-        basemap: {
-          lightPreset: mapIsDay ? "day" : "night",
-          theme: mapIsDay ? "faded" : "default",
-          show3dObjects: false,
-          showPointOfInterestLabels: false,
-          showTransitLabels: false,
-          showAdminBoundaries: false,
-          showPlaceLabels: true,
-          showRoadLabels: true,
-          showPedestrianRoads: true,
-          colorLand: "#F2F1E8",
-          colorWater: "#D5E8E5",
-          colorGreenspace: "#C5DEBC",
-          colorRoads: "#FFFFFF",
-          colorTrunks: "#F5EEDB",
-          colorMotorways: "#EEE4C8",
-          colorBuildings: "#E6E3D8",
-          colorRoadLabels: "#84908A",
-          colorPlaceLabels: "#46534D"
+
+    // Sem token válido NÃO instanciamos o Mapbox: o construtor lançaria e
+    // derrubaria a árvore React, deixando a rota branca.
+    if (!hasMapboxToken || !mapboxToken) {
+      setMapStatus('missing-config');
+      return;
+    }
+
+    mapboxgl.accessToken = mapboxToken;
+
+    let instance: mapboxgl.Map;
+    try {
+      instance = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: "mapbox://styles/mapbox/standard",
+        center: userLocation,
+        zoom: 15,
+        pitch: 45,
+        bearing: 0,
+        antialias: true,
+        config: {
+          basemap: {
+            lightPreset: mapIsDay ? "day" : "night",
+            theme: mapIsDay ? "faded" : "default",
+            show3dObjects: false,
+            showPointOfInterestLabels: false,
+            showTransitLabels: false,
+            showAdminBoundaries: false,
+            showPlaceLabels: true,
+            showRoadLabels: true,
+            showPedestrianRoads: true,
+            colorLand: "#F2F1E8",
+            colorWater: "#D5E8E5",
+            colorGreenspace: "#C5DEBC",
+            colorRoads: "#FFFFFF",
+            colorTrunks: "#F5EEDB",
+            colorMotorways: "#EEE4C8",
+            colorBuildings: "#E6E3D8",
+            colorRoadLabels: "#84908A",
+            colorPlaceLabels: "#46534D"
+          }
         }
+      });
+    } catch {
+      // Nunca logamos token, URL com token nem conteúdo de import.meta.env.
+      console.error('Mapbox: falha ao inicializar o mapa.');
+      setMapStatus('error');
+      return;
+    }
+
+    map.current = instance;
+    let didLoad = false;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const handleLoad = () => {
+      didLoad = true;
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
       }
-    });
-    map.current.on('load', () => {
-      if (!map.current) return;
-      hideMapLabels(map.current);
-      enrichMap(map.current, mapIsDay);
-      tintMapInk(map.current, !mapIsDay);
-    });
+      hideMapLabels(instance);
+      enrichMap(instance, mapIsDay);
+      tintMapInk(instance, !mapIsDay);
+      setMapStatus('ready');
+    };
+
+    // Erros de tile depois do load não podem derrubar a tela; apenas o erro
+    // que impede a primeira renderização vira fallback.
+    const handleError = () => {
+      if (!didLoad) setMapStatus('error');
+    };
+
+    instance.on('load', handleLoad);
+    instance.on('error', handleError);
+    loadTimeout = setTimeout(() => {
+      if (!didLoad) setMapStatus('error');
+    }, MAP_LOAD_TIMEOUT_MS);
 
     const getUserInitials = (name: string) => name.split(' ').map(w => w.charAt(0)).join('').toUpperCase().slice(0, 2);
     const markerElement = document.createElement('div');
@@ -688,12 +739,36 @@ const SearchWalk = () => {
         ${userAvatarUrl ? `<img src="${userAvatarUrl}" alt="User" class="w-full h-full object-cover" />` : `<span class="text-xs font-bold text-white">${getUserInitials(userName)}</span>`}
       </div>
     `;
-    userMarker.current = new mapboxgl.Marker(markerElement).setLngLat(userLocation).addTo(map.current);
-    return () => { map.current?.remove(); map.current = null; };
+    userMarker.current = new mapboxgl.Marker(markerElement).setLngLat(userLocation).addTo(instance);
+
+    return () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+      try {
+        instance.off('load', handleLoad);
+        instance.off('error', handleError);
+      } catch {
+        /* noop — nunca deixamos o cleanup lançar */
+      }
+      try {
+        userMarker.current?.remove();
+      } catch {
+        /* noop */
+      }
+      userMarker.current = null;
+      try {
+        instance.remove();
+      } catch {
+        /* noop */
+      }
+      if (map.current === instance) map.current = null;
+    };
     // Init the map only ONCE, when we first get a location. Subsequent
     // Map init.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!userLocation]);
+  }, [!!userLocation, mapInitAttempt]);
 
   // Swap basemap + re-tint when the user toggles light/dark or weather updates.
   useEffect(() => {
@@ -1007,6 +1082,11 @@ const SearchWalk = () => {
 
   const handleSearch = async () => {
     if (!user || selectedPets.length === 0 || !userLocation) return;
+    // O mapa é obrigatório para iniciar um passeio: sem ele, não seguimos.
+    if (!hasMapboxToken || isMapUnavailable(mapStatus)) {
+      toast.error('Mapa indisponível no momento. Tente novamente em instantes.');
+      return;
+    }
     
     // Check for existing active session first
     const { data: existingSession } = await supabase

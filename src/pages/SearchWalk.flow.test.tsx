@@ -107,6 +107,14 @@ vi.mock("@/lib/mapStyle", () => ({
   tintMapInk: vi.fn(),
 }));
 
+// A rota exige um mapa configurado para iniciar um passeio: sem token o guard
+// da rota mostra o fallback e `handleSearch` é bloqueado de propósito.
+// Este teste cobre a máquina de estados do handoff, então fornecemos o token.
+vi.mock("@/lib/mapboxConfig", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/mapboxConfig")>();
+  return { ...actual, hasMapboxToken: true, mapboxToken: "pk.test-token" };
+});
+
 vi.mock("@/lib/dog3dLayer", () => ({
   preloadDog3DAsset: vi.fn(() => Promise.resolve()),
   createDog3DLayer: vi.fn(),

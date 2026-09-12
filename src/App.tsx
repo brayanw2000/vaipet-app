@@ -21,6 +21,7 @@ import PetwalkerHistorico from "./pages/petwalker/historico";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { PetwalkerGpsProvider } from "./components/PetwalkerGpsProvider";
 import SearchWalk from "./pages/SearchWalk";
+import { MapboxGuard } from "./components/MapboxGuard";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import SignupWizard from "./pages/SignupWizard";
@@ -97,7 +98,7 @@ const App = () => {
         <Routes>
           <Route path="/inicio" element={<Index />} />
           <Route path="/" element={<RoleLanding />} />
-          <Route path="/search-walk" element={<SearchWalk />} />
+          <Route path="/search-walk" element={<MapboxGuard><SearchWalk /></MapboxGuard>} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/signup" element={<SignupWizard initialIntent={new URLSearchParams(window.location.search).get('intent') as 'pet_owner' | 'petwalker' | null} />} />
           <Route path="/politica-de-privacidade" element={<PrivacyPolicy />} />

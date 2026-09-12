@@ -33,6 +33,11 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useHomeTheme } from '@/hooks/useHomeTheme';
+import {
+  hasMapboxToken,
+  mapboxToken,
+  MAP_UNAVAILABLE_SHORT,
+} from '@/lib/mapboxConfig';
 import { motion } from 'framer-motion';
 
 const containerVariants = {
@@ -59,8 +64,6 @@ const itemVariants = {
 const BRAND = '#31D880';
 const BRAND_DEEP = '#1FB368';
 
-const MAPBOX_TOKEN =
-  import.meta.env.VITE_MAPBOX_TOKEN;
 
 interface Pet {
   id: string;
@@ -235,12 +238,14 @@ export const HomePasseio: React.FC = () => {
   }, [user]);
 
   // Reverse-geocode neighborhood via Mapbox.
+  // Sem token válido não montamos a URL: nunca deve existir
+  // `access_token=undefined` em nenhuma requisição.
   useEffect(() => {
-    if (!loc) return;
+    if (!loc || !hasMapboxToken || !mapboxToken) return;
     let cancel = false;
     (async () => {
       try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${loc.longitude},${loc.latitude}.json?access_token=${MAPBOX_TOKEN}&language=pt&types=neighborhood,locality,place`;
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${loc.longitude},${loc.latitude}.json?access_token=${mapboxToken}&language=pt&types=neighborhood,locality,place`;
         const r = await fetch(url);
         const j = await r.json();
         if (cancel) return;
@@ -303,9 +308,11 @@ export const HomePasseio: React.FC = () => {
   const mapBaseColor = !mapIsDay ? PAPER : INK;
   const mapLineColor = !mapIsDay ? INK : PAPER;
   const missingLocationOverlay = !mapIsDay ? `${PAPER}B8` : `${INK}66`;
-  const mapUrl = loc
-    ? `https://api.mapbox.com/styles/v1/mapbox/${mapStyle}/static/${loc.longitude},${loc.latitude},15.6,0,0/720x540@2x?access_token=${MAPBOX_TOKEN}&attribution=false&logo=false`
-    : null;
+  // A imagem estática só é montada com token válido + localização.
+  const mapUrl =
+    loc && hasMapboxToken && mapboxToken
+      ? `https://api.mapbox.com/styles/v1/mapbox/${mapStyle}/static/${loc.longitude},${loc.latitude},15.6,0,0/720x540@2x?access_token=${mapboxToken}&attribution=false&logo=false`
+      : null;
 
   const [locRequesting, setLocRequesting] = useState(false);
   const [locDenied, setLocDenied] = useState(false);
@@ -598,6 +605,20 @@ export const HomePasseio: React.FC = () => {
               );
             })()}
           </div>
+
+          {/* Aviso discreto quando o token do Mapbox não está configurado. */}
+          {!hasMapboxToken && (
+            <div className="absolute top-16 left-4 right-4 flex justify-start pointer-events-none">
+              <span
+                role="status"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-[0.18em]"
+                style={{ background: `${INK}CC`, color: PAPER }}
+              >
+                <MapPin className="w-3 h-3" strokeWidth={2.4} />
+                {MAP_UNAVAILABLE_SHORT}
+              </span>
+            </div>
+          )}
 
           {/* Map Center Indicator */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
