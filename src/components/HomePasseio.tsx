@@ -5,7 +5,7 @@
  * - Quick Tiles (PetShop/Vet): Radius 28px, sombras suaves, ícones em containers arredondados 20px.
  * - KPIs: Distância e Tempo removidos da homepage.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
@@ -17,6 +17,7 @@ import {
   Stethoscope,
   Sun,
   Moon,
+  X,
   Cloud,
   CloudRain,
   CloudSnow,
@@ -317,18 +318,34 @@ export const HomePasseio: React.FC = () => {
   const [locRequesting, setLocRequesting] = useState(false);
   const [locDenied, setLocDenied] = useState(false);
   const [showLocBlockedModal, setShowLocBlockedModal] = useState(false);
+  // Guarda contra solicitações paralelas: enquanto uma getPosition estiver
+  // em curso, cliques repetidos não disparam novas chamadas.
+  const locRequestActiveRef = useRef(false);
 
-  const requestLocation = (e?: React.MouseEvent) => {
+  /**
+   * Solicita a localização. Sempre acionado por interação explícita do
+   * usuário (botão do card ou "Tentar novamente" do modal) — exceto quando
+   * a permissão já está `granted`, quando pode rodar silenciosamente.
+   *
+   * - `silent`: não abre o modal em caso de erro (usado no mount granted).
+   * - NUNCA recarrega a página e NUNCA persiste coordenadas.
+   */
+  const requestLocation = (e?: React.MouseEvent, options?: { silent?: boolean }) => {
     e?.stopPropagation();
-    if (!('geolocation' in navigator)) { 
-      setLocDenied(true); 
-      setShowLocBlockedModal(true); 
-      return; 
+    if (!('geolocation' in navigator) || !navigator.geolocation) {
+      setLocDenied(true);
+      if (!options?.silent) setShowLocBlockedModal(true);
+      return;
     }
-    
+    // Uma solicitação por vez: cliques repetidos não empilham chamadas.
+    if (locRequestActiveRef.current) return;
+
+    const silent = options?.silent ?? false;
+    locRequestActiveRef.current = true;
     setLocRequesting(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        locRequestActiveRef.current = false;
         setLoc({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -340,40 +357,56 @@ export const HomePasseio: React.FC = () => {
         setLocDenied(false);
         setShowLocBlockedModal(false);
       },
-      (err) => { 
+      (err) => {
+        locRequestActiveRef.current = false;
         console.error('Geolocation error:', err);
-        setLocDenied(true); 
         setLocRequesting(false);
-        setShowLocBlockedModal(true);
+        setLocDenied(true);
+        // Em erro silencioso (granted no mount) a Home segue funcionando
+        // sem bloquear o usuário com o modal.
+        if (!silent) setShowLocBlockedModal(true);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   };
 
+  // Consulta a permissão no mount — sem bloquear a Home.
+  // - granted   → busca a localização silenciosamente (erro não abre modal);
+  // - denied    → apenas marca locDenied (a Home continua utilizável);
+  // - prompt    → NÃO solicita automaticamente; a espera é por ação do usuário;
+  // - sem Permissions API ou query rejeitada → segue sem lançar erro.
   useEffect(() => {
-    // Initial request
-    requestLocation();
+    if (!('permissions' in navigator) || !navigator.permissions) return;
 
-    // Monitor permission changes
-    if ('permissions' in navigator) {
-      navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((status) => {
-        if (status.state === 'denied') {
+    let cancelled = false;
+    navigator.permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then((status) => {
+        if (cancelled) return;
+        if (status.state === 'granted') {
+          requestLocation(undefined, { silent: true });
+        } else if (status.state === 'denied') {
           setLocDenied(true);
-          setShowLocBlockedModal(true);
         }
-        
         status.onchange = () => {
-          if (status.state === 'denied') {
-            setLocDenied(true);
-            setShowLocBlockedModal(true);
-          } else if (status.state === 'granted') {
+          if (cancelled) return;
+          if (status.state === 'granted') {
             setLocDenied(false);
             setShowLocBlockedModal(false);
-            requestLocation();
+            requestLocation(undefined, { silent: true });
+          } else if (status.state === 'denied') {
+            setLocDenied(true);
           }
         };
+      })
+      .catch(() => {
+        // Permissions API indisponível/rejeitada: Home segue funcionando.
       });
-    }
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -648,7 +681,16 @@ export const HomePasseio: React.FC = () => {
                 Localização desativada
               </p>
               <button
-                onClick={requestLocation}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (locDenied) {
+                    // Não fingimos que abrimos os ajustes do Safari:
+                    // explicamos como ativar no modal.
+                    setShowLocBlockedModal(true);
+                  } else {
+                    requestLocation(e);
+                  }
+                }}
                 disabled={locRequesting}
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-full active:scale-95 transition-transform"
                 style={{
@@ -665,7 +707,7 @@ export const HomePasseio: React.FC = () => {
                 {locRequesting
                   ? 'Buscando…'
                   : locDenied
-                  ? 'Permitir nas configurações'
+                  ? 'Como ativar localização'
                   : 'Ativar localização'}
               </button>
             </div>
@@ -928,6 +970,9 @@ export const HomePasseio: React.FC = () => {
     )}
         <LocationBlockedModal 
           isOpen={showLocBlockedModal} 
+          onClose={() => setShowLocBlockedModal(false)}
+          onRetry={() => requestLocation()}
+          requesting={locRequesting}
           paper={PAPER} 
           ink={INK} 
         />
@@ -1170,19 +1215,52 @@ const MapFallback: React.FC<{ background: string; line: string }> = ({ backgroun
   </svg>
 );
 
+/**
+ * Modal informativo de localização.
+ *
+ * Nunca bloqueia a Home automaticamente e nunca recarrega a página:
+ * - "Tentar novamente" chama getCurrentPosition de novo (pode ter sido
+ *   liberado nos ajustes do navegador desde a última negativa);
+ * - "Ativar depois" fecha o modal e a Home continua funcionando;
+ * - backdrop, X e Escape também fecham; clique dentro do card não fecha.
+ */
 const LocationBlockedModal: React.FC<{
   isOpen: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+  requesting: boolean;
   paper: string;
   ink: string;
-}> = ({ isOpen, paper, ink }) => {
+}> = ({ isOpen, onClose, onRetry, requesting, paper, ink }) => {
+  // Escape fecha o modal enquanto estiver aberto.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center px-5 pb-8 sm:items-center sm:pb-0">
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-md" 
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center px-5 pb-8 sm:items-center sm:pb-0"
+      data-testid="location-blocked-modal"
+    >
+      {/* Backdrop: clique fecha (não há como “errar” o alvo da Home). */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden="true"
+        data-testid="location-modal-backdrop"
       />
-      <div 
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="location-modal-title"
+        onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-300"
         style={{ 
           background: paper, 
@@ -1192,6 +1270,17 @@ const LocationBlockedModal: React.FC<{
         }}
       >
         <div className="p-8 text-center">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar aviso de localização"
+            data-testid="location-modal-close"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            style={{ border: `1px solid ${ink}26` }}
+          >
+            <X className="w-4 h-4" strokeWidth={2.4} />
+          </button>
+
           <div 
             className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6"
             style={{ background: '#31D880', color: '#0B1410' }}
@@ -1200,27 +1289,41 @@ const LocationBlockedModal: React.FC<{
           </div>
           
           <h3 
+            id="location-modal-title"
             className="text-2xl font-bold mb-3"
             style={{ fontFamily: 'Space Grotesk, sans-serif', letterSpacing: '-0.02em' }}
           >
-            Localização bloqueada
+            Localização desativada
           </h3>
           
-          <p className="text-[14px] leading-relaxed mb-8" style={{ opacity: 0.7 }}>
-            Para usar o VaiPet, você precisa autorizar o acesso à sua localização. Isso nos permite encontrar os melhores walkers e garantir a segurança do seu pet.
+          <p className="text-[14px] leading-relaxed mb-2" style={{ opacity: 0.7 }}>
+            Você pode continuar usando o VaiPet e ativar a localização depois.
+          </p>
+          <p className="text-[13px] leading-relaxed mb-8" style={{ opacity: 0.6 }}>
+            Ela só é necessária para os recursos de mapa e para solicitar um passeio.
           </p>
           
           <div className="space-y-3">
             <button
-              onClick={() => window.location.reload()}
+              type="button"
+              onClick={onRetry}
+              disabled={requesting}
               className="w-full h-14 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
               style={{ background: '#0B1410', color: '#F7F5EF' }}
             >
-              <Activity className="w-5 h-5" />
-              Tentar novamente
+              <MapPin className="w-5 h-5" strokeWidth={2.4} />
+              {requesting ? 'Buscando…' : 'Tentar novamente'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full h-12 rounded-2xl font-bold flex items-center justify-center active:scale-95 transition-transform"
+              style={{ border: `1px solid ${ink}26` }}
+            >
+              Ativar depois
             </button>
             <p className="text-[11px] font-medium" style={{ opacity: 0.5 }}>
-              Verifique as permissões de site do seu navegador.
+              Dica: verifique as permissões de site do seu navegador.
             </p>
           </div>
         </div>
